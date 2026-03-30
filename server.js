@@ -70,7 +70,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ─── Diagnóstico temporal SMTP (borrar después de validar) ───
+// ─── Diagnóstico temporal SMTP (solo desarrollo) ───
+if (process.env.NODE_ENV !== 'production') {
 app.get('/debug/smtp', async (req, res) => {
   const nodemailer = require('nodemailer');
   const { promises: dns } = require('dns');
@@ -123,6 +124,7 @@ app.get('/debug/smtp', async (req, res) => {
 
   res.json(diag);
 });
+}
 
 app.use((req, res, next) => {
   logger.warn(`Ruta no encontrada (404): ${req.method} ${req.originalUrl}`);

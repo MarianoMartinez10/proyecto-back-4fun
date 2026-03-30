@@ -4,7 +4,7 @@ exports.createReview = async (req, res, next) => {
   try {
     const { rating, title, text } = req.body;
     const review = await ReviewService.createReview(
-      req.user._id,
+      req.user.id,
       req.params.productId,
       { rating, title, text }
     );
@@ -38,7 +38,7 @@ exports.getProductRatingStats = async (req, res, next) => {
 
 exports.voteHelpful = async (req, res, next) => {
   try {
-    const result = await ReviewService.voteHelpful(req.params.id, req.user._id);
+    const result = await ReviewService.voteHelpful(req.params.id, req.user.id);
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -48,7 +48,7 @@ exports.voteHelpful = async (req, res, next) => {
 exports.deleteReview = async (req, res, next) => {
   try {
     const isAdmin = req.user.role === 'admin';
-    const result = await ReviewService.deleteReview(req.params.id, req.user._id, isAdmin);
+    const result = await ReviewService.deleteReview(req.params.id, req.user.id, isAdmin);
     res.status(200).json({ success: true, ...result });
   } catch (error) {
     next(error);

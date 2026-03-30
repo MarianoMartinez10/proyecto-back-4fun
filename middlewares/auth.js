@@ -6,8 +6,10 @@ exports.protect = async (req, res, next) => {
     try {
         let token;
 
-        // DEBUG: Log para ver qué recibe el backend
-        logger.info(`[AUTH DEBUG] Cookies: ${JSON.stringify(req.cookies)}, Auth Header: ${req.headers.authorization}`);
+        // DEBUG: Log para ver qué recibe el backend (solo en desarrollo)
+        if (process.env.NODE_ENV !== 'production') {
+            logger.info(`[AUTH DEBUG] Cookies: ${JSON.stringify(req.cookies)}, Auth Header: ${req.headers.authorization}`);
+        }
 
         // 1. Prioridad: Token en Cookie (HttpOnly - Más seguro contra XSS)
         if (req.cookies && req.cookies.token) {

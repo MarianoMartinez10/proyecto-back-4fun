@@ -60,7 +60,7 @@ exports.getUsers = async (req, res, next) => {
   }
 };
 
-// @desc    Obtener detalle de usuario con métricas CRM (LTV, Última compra)
+// @desc    Obtener perfil completo de usuario con métricas y pedidos
 // @route   GET /api/users/:id
 // @access  Private/Admin
 exports.getUserById = async (req, res, next) => {
@@ -71,6 +71,9 @@ exports.getUserById = async (req, res, next) => {
         id: true,
         name: true,
         email: true,
+        avatar: true,
+        phone: true,
+        address: true,
         role: true,
         isVerified: true,
         createdAt: true
@@ -81,24 +84,42 @@ exports.getUserById = async (req, res, next) => {
       throw new ErrorResponse('Usuario no encontrado', 404);
     }
 
-    // --- CRM ANALYTICS ---
+    // Órdenes del usuario
     const orders = await prisma.order.findMany({
-      where: { userId: user.id, isPaid: true },
-      select: { totalPrice: true, createdAt: true }
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      include: { orderItems: true, shippingAddress: true }
     });
 
-    const totalSpent = orders.reduce((sum, order) => sum + order.totalPrice, 0);
-    const orderCount = orders.length;
-    const lastOrderDate = orders.length > 0 ? orders.map(o => o.createdAt).sort((a, b) => b - a)[0] : null;
-
-    const userCRM = {
-      ...user,
-      stats: { totalSpent, orderCount, lastOrderDate }
-    };
+    // Métricas calculadas
+    const paidOrders = orders.filter(o => o.isPaid);
+    const totalSpent = paidOrders.reduce((sum, o) => sum + Number(o.totalPrice), 0);
+    const lastOrderDate = paidOrders.length > 0 ? paidOrders[0].createdAt : null;
 
     res.status(200).json({
       success: true,
-      data: userCRM
+      data: {
+        ...user,
+        stats: {
+          totalSpent,
+          orderCount: paidOrders.length,
+          totalOrders: orders.length,
+          lastOrderDate
+        },
+        orders: orders.map(o => ({
+          id: o.id,
+          createdAt: o.createdAt,
+          totalPrice: Number(o.totalPrice),
+          orderStatus: o.orderStatus,
+          isPaid: o.isPaid,
+          itemCount: o.orderItems.length,
+          items: o.orderItems.map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.price)
+          }))
+        }))
+      }
     });
 
   } catch (error) {
@@ -115,7 +136,7 @@ exports.updateUser = async (req, res, next) => {
 
     // Validación preventiva
     if (req.user.id === req.params.id && role && role !== 'admin') {
-      // Ignoramos auto-degradación
+      throw new ErrorResponse('No puedes cambiar tu propio rol de administrador.', 400);
     }
 
     const user = await prisma.user.update({

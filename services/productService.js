@@ -66,11 +66,15 @@ exports.getProducts = async (query = {}) => {
     const where = { activo: true };
 
     if (search) {
-        where.OR = [
-            { nombre: { contains: search, mode: 'insensitive' } },
-            { descripcion: { contains: search, mode: 'insensitive' } },
-            { desarrollador: { contains: search, mode: 'insensitive' } },
-        ];
+        const searchCondition = {
+            OR: [
+                { nombre: { contains: search, mode: 'insensitive' } },
+                { descripcion: { contains: search, mode: 'insensitive' } },
+                { desarrollador: { contains: search, mode: 'insensitive' } },
+            ]
+        };
+        if (!where.AND) where.AND = [];
+        where.AND.push(searchCondition);
     }
 
     if (platform) {
@@ -97,10 +101,13 @@ exports.getProducts = async (query = {}) => {
 
     if (discounted === 'true') {
         where.descuentoPorcentaje = { gt: 0 };
-        where.OR = [
-            { descuentoFechaFin: null },
-            { descuentoFechaFin: { gt: new Date() } }
-        ];
+        if (!where.AND) where.AND = [];
+        where.AND.push({
+            OR: [
+                { descuentoFechaFin: null },
+                { descuentoFechaFin: { gt: new Date() } }
+            ]
+        });
     }
 
     const pageNum = Math.max(1, Number(page));

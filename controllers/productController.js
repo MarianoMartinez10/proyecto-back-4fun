@@ -96,7 +96,7 @@ exports.deleteProducts = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `${result.modifiedCount} productos eliminados`,
+      message: `${result.count} productos eliminados`,
       ids
     });
   } catch (error) {

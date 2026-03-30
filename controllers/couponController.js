@@ -4,7 +4,18 @@ const ErrorResponse = require('../utils/errorResponse');
 // Crear Cupón (Admin)
 exports.createCoupon = async (req, res, next) => {
     try {
-        const coupon = await prisma.coupon.create({ data: req.body });
+        const { code, discountType, value, minPurchase, usageLimit, expiryDate, isActive } = req.body;
+        const coupon = await prisma.coupon.create({
+            data: {
+                code: code?.toUpperCase(),
+                discountType: discountType || 'percentage',
+                value: value !== undefined ? value : 0,
+                minPurchase: minPurchase !== undefined ? minPurchase : 0,
+                usageLimit: usageLimit || null,
+                expiryDate: expiryDate ? new Date(expiryDate) : null,
+                isActive: isActive !== undefined ? isActive : true
+            }
+        });
         res.status(201).json({ success: true, data: coupon });
     } catch (error) {
         next(error);

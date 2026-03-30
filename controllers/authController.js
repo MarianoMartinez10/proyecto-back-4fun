@@ -1,6 +1,7 @@
 const AuthService = require('../services/authService');
 const UserService = require('../services/userService');
 const ErrorResponse = require('../utils/errorResponse');
+const jwt = require('jsonwebtoken');
 
 // Transforma un user document a la forma estándar de respuesta
 const toUserDTO = (user) => ({
@@ -17,7 +18,9 @@ const toUserDTO = (user) => ({
 
 // Helper para gestionar la cookie y respuesta del token
 const sendTokenResponse = (user, statusCode, res, emailSent) => {
-    const token = user.getSignedJwtToken();
+    const token = jwt.sign({ id: user.id || user._id }, process.env.JWT_SECRET, {
+        expiresIn: process.env.JWT_EXPIRE || '7d'
+    });
 
     const options = {
         expires: new Date(Date.now() + (process.env.JWT_COOKIE_EXPIRE || 30) * 24 * 60 * 60 * 1000),

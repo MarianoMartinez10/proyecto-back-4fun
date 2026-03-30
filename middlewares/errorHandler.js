@@ -2,6 +2,7 @@ const logger = require('../utils/logger');
 
 /**
  * Middleware Global de Errores con Winston Logging
+ * Compatible con Prisma (PostgreSQL)
  */
 const errorHandler = (err, req, res, next) => {
   // Sanitize body before logging — remove sensitive fields
@@ -21,23 +22,39 @@ const errorHandler = (err, req, res, next) => {
   let message = err.message || 'Error interno del servidor';
   let errors = undefined;
 
-  if (err.name === 'ValidationError') {
+  // Prisma: Unique constraint violation (ej: email duplicado)
+  if (err.code === 'P2002') {
+    statusCode = 409;
+    const field = err.meta?.target?.[0] || 'campo';
+    message = `El valor del campo '${field}' ya existe`;
+  }
+  // Prisma: Record not found
+  else if (err.code === 'P2025') {
+    statusCode = 404;
+    message = err.meta?.cause || 'Registro no encontrado';
+  }
+  // Prisma: Foreign key constraint failed
+  else if (err.code === 'P2003') {
+    statusCode = 400;
+    const field = err.meta?.field_name || 'referencia';
+    message = `Referencia inválida: el registro vinculado en '${field}' no existe`;
+  }
+  // Prisma: Invalid input value
+  else if (err.code === 'P2006') {
+    statusCode = 400;
+    message = `Valor inválido para el campo: ${err.meta?.field_name || 'desconocido'}`;
+  }
+  // Express-validator ValidationError (backward compat)
+  else if (err.name === 'ValidationError' && err.errors) {
     statusCode = 400;
     errors = Object.values(err.errors).map(e => e.message);
     message = errors.length > 0 ? errors.join('. ') : 'Error de validación de datos';
-  } else if (err.code === 11000) {
-    statusCode = 409;
-    const field = Object.keys(err.keyPattern)[0];
-    message = `El valor del campo '${field}' ya existe`;
-  } else if (err.name === 'CastError') {
-    statusCode = 400;
-    message = `Formato inválido para el campo: ${err.path}`;
   }
 
   res.status(statusCode).json({
     success: false,
     error: {
-      type: err.name,
+      type: err.name || 'Error',
       message: message,
       details: errors,
       // Solo mostramos stack trace en desarrollo
