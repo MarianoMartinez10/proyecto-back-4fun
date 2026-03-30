@@ -5,7 +5,7 @@ const logger = require('../utils/logger');
 exports.createOrder = async (req, res, next) => {
   try {
     const result = await OrderService.createOrder({
-      user: req.user._id,
+      user: req.user,
       ...req.body
     });
     res.status(201).json({
@@ -51,7 +51,7 @@ exports.paymentFeedback = (req, res) => {
 // Obtener órdenes del usuario logueado
 exports.getUserOrders = async (req, res, next) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const enrichedOrders = await OrderService.getUserOrders(userId);
     res.json({ success: true, count: enrichedOrders.length, orders: enrichedOrders });
   } catch (error) { next(error); }
@@ -59,7 +59,7 @@ exports.getUserOrders = async (req, res, next) => {
 
 exports.getOrder = async (req, res, next) => {
   try {
-    const order = await OrderService.getOrderById(req.params.id, req.user._id.toString(), req.user.role);
+    const order = await OrderService.getOrderById(req.params.id, req.user.id, req.user.role);
     res.json({ success: true, order });
   } catch (error) { next(error); }
 };
