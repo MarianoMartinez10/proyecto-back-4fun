@@ -37,8 +37,7 @@ exports.getUsers = async (req, res, next) => {
           email: true,
           role: true,
           isVerified: true,
-          createdAt: true,
-          updatedAt: true
+          createdAt: true
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -74,8 +73,7 @@ exports.getUserById = async (req, res, next) => {
         email: true,
         role: true,
         isVerified: true,
-        createdAt: true,
-        updatedAt: true
+        createdAt: true
       }
     });
 
@@ -134,8 +132,7 @@ exports.updateUser = async (req, res, next) => {
         email: true,
         role: true,
         isVerified: true,
-        createdAt: true,
-        updatedAt: true
+        createdAt: true
       }
     }).catch(err => {
       if (err.code === 'P2025') throw new ErrorResponse('Usuario no encontrado', 404);
