@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const PRODUCT_INCLUDE = {
     platform: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
     genre: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
+    _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE' } } } },
 };
 
 function productToDTO(p) {
@@ -44,7 +45,7 @@ function productToDTO(p) {
         imageId: p.imagenUrl || 'https://placehold.co/600x400?text=No+Image',
         trailerUrl: p.trailerUrl || '',
         rating: Number(p.calificacion),
-        stock: p.stock,
+        stock: p.tipo === 'Digital' ? (p._count?.digitalKeys ?? p.stock) : p.stock,
         active: p.activo,
         specPreset: p.specPreset,
         requirements: p.requirements
@@ -80,7 +81,9 @@ exports.getProducts = async (query = {}) => {
     if (platform) {
         const platforms = platform.split(',').filter(Boolean);
         if (platforms.length > 0) {
-            const platformRecords = await prisma.platform.findMany({ where: { slug: { in: platforms } } });
+            const platformRecords = await prisma.platform.findMany({ 
+                where: { OR: [{ slug: { in: platforms } }, { id: { in: platforms } }] } 
+            });
             where.platformId = { in: platformRecords.map(p => p.id) };
         }
     }
@@ -88,7 +91,9 @@ exports.getProducts = async (query = {}) => {
     if (genre) {
         const genres = genre.split(',').filter(Boolean);
         if (genres.length > 0) {
-            const genreRecords = await prisma.genre.findMany({ where: { slug: { in: genres } } });
+            const genreRecords = await prisma.genre.findMany({ 
+                where: { OR: [{ slug: { in: genres } }, { id: { in: genres } }] } 
+            });
             where.genreId = { in: genreRecords.map(g => g.id) };
         }
     }
