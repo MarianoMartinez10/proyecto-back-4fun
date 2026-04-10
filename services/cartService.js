@@ -29,7 +29,7 @@ class CartService {
             _id: item.id,
             id: item.id,
             quantity: item.quantity,
-            product: ProductService.transformDTO(item.product)
+            product: ProductService.productToDTO(item.product)
         }));
 
         return { ...cart, _id: cart.id, items: transformedItems };

@@ -60,16 +60,16 @@ class DashboardService {
     static async getTopProducts() {
         const orderItems = await prisma.orderItem.findMany({
             where: { order: { isPaid: true } },
-            select: { productId: true, name: true, quantity: true, price: true }
+            select: { productId: true, quantity: true, unitPriceAtPurchase: true, product: { select: { nombre: true } } }
         });
 
         const productMap = {};
         for (const i of orderItems) {
             if (!productMap[i.productId]) {
-                productMap[i.productId] = { _id: i.productId, name: i.name, totalSold: 0, revenueGenerated: 0 };
+                productMap[i.productId] = { _id: i.productId, name: i.product?.nombre || 'Desconocido', totalSold: 0, revenueGenerated: 0 };
             }
             productMap[i.productId].totalSold += i.quantity;
-            productMap[i.productId].revenueGenerated += Number(i.price) * i.quantity;
+            productMap[i.productId].revenueGenerated += Number(i.unitPriceAtPurchase) * i.quantity;
         }
 
         return Object.values(productMap)

@@ -25,7 +25,7 @@ class WishlistService {
 
         const productos = wishlist.items
             .filter(item => item.product)
-            .map(item => ProductService.transformDTO(item.product));
+            .map(item => ProductService.productToDTO(item.product));
 
         logger.info(`Wishlist obtenida para usuario: ${userId}`);
         return productos;
