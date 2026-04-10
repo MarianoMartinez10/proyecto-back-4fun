@@ -130,10 +130,6 @@ model Order {
   id            String      @id @default(uuid())
   userId        String
   paymentMethod String      @default("mercadopago")
-  mpPaymentId   String?
-  mpStatus      String?
-  mpPaymentType String?
-  mpEmail       String?
   externalId    String?     @unique
   itemsPrice    Decimal     @db.Decimal(10, 2)
   shippingPrice Decimal     @db.Decimal(10, 2)
@@ -147,8 +143,22 @@ model Order {
 
   user            User             @relation(fields: [userId], references: [id])
   shippingAddress ShippingAddress?
+  payment         Payment?
   orderItems      OrderItem[]
   digitalKeys     DigitalKey[]
+}
+
+// Normalización de "datos de pago" → tabla propia (3NF)
+model Payment {
+  id            String   @id @default(uuid())
+  orderId       String   @unique
+  mpPaymentId   String?
+  mpStatus      String?
+  mpPaymentType String?
+  mpEmail       String?
+  createdAt     DateTime @default(now())
+
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 // Normalización de "shippingAddress: Object embebido" → tabla propia (3NF)
@@ -166,15 +176,13 @@ model ShippingAddress {
 
 // Normalización del array "orderItems[]" → tabla intermedia (3NF)
 model OrderItem {
-  id        String  @id @default(uuid())
-  orderId   String
-  productId String
-  name      String
-  quantity  Int
-  price     Decimal @db.Decimal(10, 2)
-  image     String?
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product @relation(fields: [productId], references: [id])
+  id                  String  @id @default(uuid())
+  orderId             String
+  productId           String
+  quantity            Int
+  unitPriceAtPurchase Decimal @default(0) @db.Decimal(10, 2)
+  order               Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product             Product @relation(fields: [productId], references: [id])
 }
 
 // ── Carrito ───────────────────────────────────────────────────────────────────
@@ -238,7 +246,6 @@ model Review {
   text              String
   sentiment         Sentiment?
   sentimentScore    Decimal?   @db.Decimal(5, 4)
-  sentimentKeywords String[]
   verified          Boolean    @default(false)
   helpfulCount      Int        @default(0)
   createdAt         DateTime   @default(now())
@@ -247,8 +254,17 @@ model Review {
   user         User                @relation(fields: [userId], references: [id])
   product      Product             @relation(fields: [productId], references: [id])
   helpfulVotes ReviewHelpfulVote[]
+  keywords     ReviewKeyword[]
 
   @@unique([userId, productId])
+}
+
+// Normalización del array "sentimentKeywords" (1NF)
+model ReviewKeyword {
+  id        String @id @default(uuid())
+  reviewId  String
+  keyword   String
+  review    Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 }
 
 // Normalización del array "helpfulVoters[]" → tabla intermedia (3NF)

@@ -76,10 +76,8 @@ class OrderService {
                 orderItems: {
                     create: validatedItems.map(i => ({
                         productId: i.id,
-                        name: i.title,
                         quantity: i.quantity,
-                        price: i.unit_price,
-                        image: i.picture_url || ''
+                        unitPriceAtPurchase: i.unit_price
                     }))
                 }
             }
@@ -147,10 +145,14 @@ class OrderService {
                 where: { id: order.id },
                 data: {
                     isPaid: true, paidAt: new Date(), orderStatus: 'processing',
-                    mpPaymentId: String(paymentInfo.id),
-                    mpStatus: 'approved',
-                    mpPaymentType: paymentInfo.payment_type_id || '',
-                    mpEmail: paymentInfo.payer?.email || ''
+                    payment: {
+                        create: {
+                            mpPaymentId: String(paymentInfo.id),
+                            mpStatus: 'approved',
+                            mpPaymentType: paymentInfo.payment_type_id || '',
+                            mpEmail: paymentInfo.payer?.email || ''
+                        }
+                    }
                 }
             });
 
@@ -172,24 +174,41 @@ class OrderService {
         const orders = await prisma.order.findMany({
             where: { userId },
             orderBy: { createdAt: 'desc' },
-            include: { orderItems: true, shippingAddress: true, digitalKeys: { select: { id: true, clave: true, productId: true } } }
+            include: { orderItems: { include: { product: true } }, shippingAddress: true, digitalKeys: { select: { id: true, clave: true, productId: true } } }
         });
 
         return orders.map(o => ({
             ...o,
             _id: o.id,
-            orderItems: (o.orderItems || []).map(i => ({ ...i, _id: i.id, image: i.image || DEFAULT_IMAGE }))
+            orderItems: (o.orderItems || []).map(i => ({ 
+                ...i, 
+                _id: i.id, 
+                price: Number(i.unitPriceAtPurchase), 
+                name: i.product?.nombre || 'Producto Desconocido', 
+                image: i.product?.imagenUrl || DEFAULT_IMAGE 
+            }))
         }));
     }
 
     async getOrderById(orderId, userId, userRole) {
         const order = await prisma.order.findUnique({
             where: { id: orderId },
-            include: { user: { select: { id: true, name: true, email: true } }, orderItems: true, shippingAddress: true }
+            include: { user: { select: { id: true, name: true, email: true } }, orderItems: { include: { product: true } }, shippingAddress: true }
         });
         if (!order) throw new ErrorResponse('Orden no encontrada', 404);
         if (order.userId !== userId && userRole !== 'admin') throw new ErrorResponse('No autorizado para ver esta orden', 403);
-        return { ...order, _id: order.id };
+        
+        return { 
+            ...order, 
+            _id: order.id,
+            orderItems: (order.orderItems || []).map(i => ({ 
+                ...i, 
+                _id: i.id, 
+                price: Number(i.unitPriceAtPurchase), 
+                name: i.product?.nombre || 'Producto Desconocido', 
+                image: i.product?.imagenUrl || DEFAULT_IMAGE 
+            }))
+        };
     }
 
     async getAllOrders({ page = 1, limit = 10, status, userId } = {}) {
@@ -205,7 +224,7 @@ class OrderService {
                 where,
                 include: {
                     user: { select: { id: true, name: true, email: true } },
-                    orderItems: true,
+                    orderItems: { include: { product: true } },
                     shippingAddress: true
                 },
                 orderBy: { createdAt: 'desc' },
@@ -220,7 +239,17 @@ class OrderService {
             total,
             page: pageNum,
             totalPages: Math.ceil(total / limitNum),
-            orders: orders.map(o => ({ ...o, _id: o.id }))
+            orders: orders.map(o => ({ 
+                ...o, 
+                _id: o.id,
+                orderItems: (o.orderItems || []).map(i => ({ 
+                    ...i, 
+                    _id: i.id, 
+                    price: Number(i.unitPriceAtPurchase), 
+                    name: i.product?.nombre || 'Producto Desconocido', 
+                    image: i.product?.imagenUrl || DEFAULT_IMAGE 
+                }))
+            }))
         };
     }
 

@@ -63,7 +63,9 @@ class ReviewService {
                 ...(sentimentResult && {
                     sentiment: sentimentResult.sentiment,
                     sentimentScore: sentimentResult.sentimentScore,
-                    sentimentKeywords: sentimentResult.sentimentKeywords
+                    keywords: {
+                        create: sentimentResult.sentimentKeywords.map(k => ({ keyword: k }))
+                    }
                 })
             },
             include: { user: { select: { id: true, name: true, avatar: true } } }
@@ -91,7 +93,7 @@ class ReviewService {
                 orderBy,
                 skip: (pageNum - 1) * limitNum,
                 take: limitNum,
-                include: { user: { select: { id: true, name: true, avatar: true } } }
+                include: { user: { select: { id: true, name: true, avatar: true } }, keywords: true }
             }),
             prisma.review.count({ where: { productId } })
         ]);
@@ -190,7 +192,7 @@ class ReviewService {
             text: review.text,
             sentiment: review.sentiment || null,
             sentimentScore: review.sentimentScore ?? null,
-            sentimentKeywords: review.sentimentKeywords || [],
+            sentimentKeywords: (review.keywords || []).map(k => k.keyword),
             verified: review.verified,
             helpfulCount: review.helpfulCount || 0,
             createdAt: review.createdAt

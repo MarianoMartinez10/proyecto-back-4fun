@@ -1,6 +1,7 @@
-const prisma = require('../lib/prisma');
+const UserService = require('../services/userService');
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
+const prisma = require('../lib/prisma'); // Keep for complex count if service doesn't have it
 
 // @desc    Obtener lista de usuarios con paginación, búsqueda y filtros
 // @route   GET /api/users
@@ -51,7 +52,7 @@ exports.getUsers = async (req, res, next) => {
       total,
       totalPages: Math.ceil(total / limit),
       currentPage: page,
-      data: users
+      data: users.map(u => ({ ...u, _id: u.id }))
     });
 
   } catch (error) {
@@ -65,26 +66,9 @@ exports.getUsers = async (req, res, next) => {
 // @access  Private/Admin
 exports.getUserById = async (req, res, next) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.params.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        avatar: true,
-        phone: true,
-        address: true,
-        role: true,
-        isVerified: true,
-        createdAt: true
-      }
-    });
+    const user = await UserService.getUserById(req.params.id);
 
-    if (!user) {
-      throw new ErrorResponse('Usuario no encontrado', 404);
-    }
-
-    // Órdenes del usuario
+    // Órdenes del usuario (this logic stays for now or could be moved to OrderService)
     const orders = await prisma.order.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
@@ -134,31 +118,11 @@ exports.updateUser = async (req, res, next) => {
   try {
     const { role, isVerified, name, email } = req.body;
 
-    // Validación preventiva
     if (req.user.id === req.params.id && role && role !== 'admin') {
       throw new ErrorResponse('No puedes cambiar tu propio rol de administrador.', 400);
     }
 
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data: {
-        ...(role && { role }),
-        ...(isVerified !== undefined && { isVerified }),
-        ...(name && { name }),
-        ...(email && { email })
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        isVerified: true,
-        createdAt: true
-      }
-    }).catch(err => {
-      if (err.code === 'P2025') throw new ErrorResponse('Usuario no encontrado', 404);
-      throw err;
-    });
+    const user = await UserService.updateUser(req.params.id, { role, isVerified, name, email });
 
     logger.info(`Usuario actualizado por Admin: ${req.user.email}`, { targetUser: user.email });
 
@@ -181,12 +145,7 @@ exports.deleteUser = async (req, res, next) => {
       throw new ErrorResponse('No puedes eliminar tu propia cuenta de administrador.', 400);
     }
 
-    await prisma.user.delete({
-      where: { id: req.params.id }
-    }).catch(err => {
-      if (err.code === 'P2025') throw new ErrorResponse('Usuario no encontrado', 404);
-      throw err;
-    });
+    await UserService.deleteUser(req.params.id);
 
     logger.warn(`Usuario ELIMINADO por Admin: ${req.user.email}`);
 
@@ -199,3 +158,4 @@ exports.deleteUser = async (req, res, next) => {
     next(error);
   }
 };
+

@@ -1,16 +1,21 @@
-const prisma = require('../lib/prisma');
-const createMetadataService = require('./metadataService');
+const MetadataService = require('./metadataService');
 
-const service = createMetadataService('platform', {
-    singular: 'plataforma',
-    plural: 'plataformas',
-    notFoundMsg: 'Plataforma no encontrada',
-    productField: 'platformId',
-});
+class PlatformService extends MetadataService {
+    constructor() {
+        super('platform', {
+            singular: 'plataforma',
+            plural: 'plataformas',
+            notFoundMsg: 'Plataforma no encontrada',
+            productField: 'platformId',
+        });
+    }
 
-exports.getPlatforms = service.getAll.bind(service);
-exports.getPlatformById = service.getById.bind(service);
-exports.createPlatform = service.create.bind(service);
-exports.updatePlatform = service.update.bind(service);
-exports.deletePlatform = service.deleteOne.bind(service);
-exports.deletePlatforms = service.deleteMany.bind(service);
+    async getPlatforms() { return this.getAll(); }
+    async getPlatformById(id) { return this.getById(id); }
+    async createPlatform(data) { return this.create(data); }
+    async updatePlatform(id, data) { return this.update(id, data); }
+    async deletePlatform(id) { return this.deleteOne(id); }
+    async deletePlatforms(ids) { return this.deleteMany(ids); }
+}
+
+module.exports = new PlatformService();
