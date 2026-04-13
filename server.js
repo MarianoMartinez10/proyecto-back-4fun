@@ -23,7 +23,18 @@ const app = express();
 // Verificar proxy para funcionamiento de cookies seguras en balanceadores de carga (Render/Vercel).
 app.set('trust proxy', 1);
 
-app.use(helmet());
+app.use(helmet({
+  // Seguridad / Compatibilidad: Declaramos directivas estables para evitar
+  // warnings de navegador por features experimentales no soportadas.
+  permissionsPolicy: {
+    directives: {
+      camera: [],
+      microphone: [],
+      geolocation: [],
+      payment: []
+    }
+  }
+}));
 app.use(require('./config/cors')); // CORS primero: descarta peticiones no autorizadas sin gastar CPU en ratelimit/logs
 
 const limiter = rateLimit({
