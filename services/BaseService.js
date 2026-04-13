@@ -115,7 +115,7 @@ class BaseService {
         if (select) queryOptions.select = select;
         if (include) queryOptions.include = include;
 
-        const entity = await this.model.findUnique(queryOptions);
+        const entity = await this.model.findFirst(queryOptions);
         
         if (!entity) {
             throw new ErrorResponse(`${this.entityLabel} no encontrado o inactivo`, 404);
