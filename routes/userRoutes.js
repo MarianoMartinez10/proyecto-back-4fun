@@ -30,7 +30,7 @@ router.route('/:id')
   /** @route GET /api/users/:id - Detalle administrativo de ficha de usuario. */
   .get(getUserById)
   /** @route PUT /api/users/:id - Actualización forzada de metadatos de perfil. */
-  .get(updateUser) 
+  .put(updateUser) 
   /** @route DELETE /api/users/:id - Baja lógica del registro de usuario. */
   .delete(deleteUser);
 

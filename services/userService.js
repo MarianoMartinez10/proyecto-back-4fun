@@ -90,7 +90,12 @@ class UserService extends BaseService {
      * @returns {Promise<Object>} Perfil actualizado transformado a DTO.
      */
     async updateUser(id, data) {
-        const { name, email, phone, address } = data;
+        const { name, email, phone, address, role, isVerified } = data;
+
+        // RN - Seguridad / RBAC: Restringe la mutación de rol a valores válidos del dominio.
+        if (role !== undefined && !['user', 'admin'].includes(role)) {
+            throw new ErrorResponse('Rol inválido. Valores permitidos: user o admin.', 400);
+        }
         
         // Manejo de Excepciones: Verifica existencia antes de intentar la mutación.
         const existing = await this.model.findUnique({ where: { id } });
@@ -103,6 +108,8 @@ class UserService extends BaseService {
                 ...(email && { email }),
                 ...(phone !== undefined && { phone }),
                 ...(address !== undefined && { address }),
+                ...(role !== undefined && { role }),
+                ...(isVerified !== undefined && { isVerified }),
             },
             select: this.getSelectFields()
         });

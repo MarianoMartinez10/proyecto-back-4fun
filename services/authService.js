@@ -194,7 +194,8 @@ class AuthService {
         });
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:9002';
-        const resetUrl = `${frontendUrl}/recuperar-contrasena?token=${rawToken}`;
+        const normalizedFrontendUrl = frontendUrl.endsWith('/') ? frontendUrl.slice(0, -1) : frontendUrl;
+        const resetUrl = `${normalizedFrontendUrl}/reset-password/${rawToken}`;
 
         const result = await emailService.sendPasswordResetEmail({ name: user.name, email: user.email, resetUrl });
 
