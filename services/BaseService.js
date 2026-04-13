@@ -19,7 +19,7 @@ class BaseService {
      * @param {object} options - Opciones adicionales.
      * @param {string} options.entityLabel - Nombre semántico para registro en Logs de Error.
      */
-    constructor(modelName, { entityLabel } = {}) {
+    constructor(modelName, { entityLabel, hasActiveField = true } = {}) {
         // Manejo de Excepciones: Bloquea intentos de usar BaseService globalmente en vez de heredar.
         if (new.target === BaseService) {
             throw new Error('BaseService es una clase abstracta y no puede instanciarse directamente.');
@@ -27,6 +27,7 @@ class BaseService {
         this.modelName = modelName;
         this.model = prisma[modelName];
         this.entityLabel = entityLabel || modelName;
+        this.hasActiveField = hasActiveField;
 
         if (!this.model) {
             throw new Error(`Modelo Prisma "${modelName}" no encontrado. Verificá el schema.`);
@@ -78,14 +79,20 @@ class BaseService {
     // ── Operaciones CRUD delegadas por Controladores ─────────────────────
 
     /**
-     * Devuelve colección de registros transformados a DTO.
-     * RN (Filtro): Solo retorna registros con estado 'activo: true' para limpieza de datos.
-     * @returns {Promise<Array>} Lista de registros.
-     */
-    async getAll() {
+    * Devuelve colección de registros transformados a DTO.
+    * RN (Filtro): Solo retorna registros con estado 'activo: true' para limpieza de datos.
+    * RN (Contexto de Rol): El controlador puede habilitar includeInactive=true
+    * para rutas administrativas protegidas por RBAC.
+    * @param {object} context - Contexto de consulta.
+    * @param {boolean} context.includeInactive - Incluye registros inactivos.
+    * @returns {Promise<Array>} Lista de registros.
+    */
+    async getAll(context = {}) {
+        const { includeInactive = false } = context;
+
         // Estructura de consulta con filtro de vitalidad por defecto.
-        const queryOptions = { 
-            where: { activo: { not: false } } 
+        const queryOptions = {
+            where: (this.hasActiveField && !includeInactive) ? { activo: { not: false } } : {}
         };
         
         const select = this.getSelectFields();
@@ -95,19 +102,28 @@ class BaseService {
         if (include) queryOptions.include = include;
 
         const entities = await this.model.findMany(queryOptions);
-        logger.info(`[${this.constructor.name}] ${this.entityLabel}(s) activos obtenidos: ${entities.length}`);
+        logger.info(
+            `[${this.constructor.name}] ${this.entityLabel}(s) obtenidos: ${entities.length}` +
+            ` | includeInactive=${includeInactive}`
+        );
         return entities.map(entity => this.toDTO(entity));
     }
 
     /**
-     * Devuelve una entidad única.
-     * RN (Audit): No permite recuperar objetos marcados como inactivos (Baja Lógica).
-     * @param {string} id - Clave primaria UUID.
-     * @returns {Promise<object>}
-     */
-    async getById(id) {
-        const queryOptions = { 
-            where: { id, activo: { not: false } } 
+    * Devuelve una entidad única.
+    * RN (Audit): No permite recuperar objetos marcados como inactivos (Baja Lógica).
+    * @param {string} id - Clave primaria UUID.
+    * @param {object} context - Contexto de consulta.
+    * @param {boolean} context.includeInactive - Habilita lectura de inactivos para admin.
+    * @returns {Promise<object>}
+    */
+    async getById(id, context = {}) {
+        const { includeInactive = false } = context;
+
+        const queryOptions = {
+            where: (this.hasActiveField && !includeInactive)
+                ? { id, activo: { not: false } }
+                : { id }
         };
         const select = this.getSelectFields();
         const include = this.getIncludeRelations();
@@ -115,10 +131,12 @@ class BaseService {
         if (select) queryOptions.select = select;
         if (include) queryOptions.include = include;
 
-        const entity = await this.model.findFirst(queryOptions);
-        
+        const entity = this.hasActiveField
+            ? await this.model.findFirst(queryOptions)
+            : await this.model.findUnique(queryOptions);
+
         if (!entity) {
-            throw new ErrorResponse(`${this.entityLabel} no encontrado o inactivo`, 404);
+            throw new ErrorResponse(`${this.entityLabel} no encontrado o dado de baja`, 404);
         }
         return this.toDTO(entity);
     }
@@ -139,11 +157,15 @@ class BaseService {
             throw new ErrorResponse(`${this.entityLabel} no encontrado`, 404);
         }
 
-        // Operación de Mutación (Logical Delete)
-        await this.model.update({ 
-            where: { id }, 
-            data: { activo: false } 
-        });
+        if (this.hasActiveField) {
+            // Operación de Mutación (Logical Delete)
+            await this.model.update({
+                where: { id },
+                data: { activo: false }
+            });
+        } else {
+            await this.model.delete({ where: { id } });
+        }
         
         logger.warn(`[${this.constructor.name}] ${this.entityLabel} dado de baja lógica: ${id}`);
         return true;

@@ -105,6 +105,11 @@ model Product {
   wishlistItems WishlistItem[]
   reviews       Review[]
   digitalKeys   DigitalKey[]
+
+  @@index([activo, orden])
+  @@index([activo, platformId])
+  @@index([activo, genreId])
+  @@index([activo, createdAt])
 }
 
 // Normalización de "requisitos: Mixed" → tabla propia (3NF)

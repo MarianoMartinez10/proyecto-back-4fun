@@ -30,6 +30,8 @@ class ProductService extends BaseService {
 
     /**
      * Define el mapa de relaciones 'Eager Loading' para evitar el problema de N+1 queries.
+     * RN (3FN): Las relaciones se resuelven con JOINs vía FK usando `include`,
+     * sin duplicar datos en tablas de producto.
      * @override Polimorfismo - Especializa la carga relacional del orquestador base.
      * @returns {Object} Configuración de Prisma Include.
      */
@@ -81,17 +83,17 @@ class ProductService extends BaseService {
                 name: p.platform.nombre,
                 imageId: p.platform.imageId,
                 active: p.platform.activo
-            } : { id: p.platformId, name: 'Desconocido' },
+            } : { id: p.platformId, name: 'Sin clasificar', active: false },
             genre: p.genre ? {
                 id: p.genre.slug,
                 name: p.genre.nombre,
                 imageId: p.genre.imageId,
                 active: p.genre.activo
-            } : { id: p.genreId, name: 'Desconocido' },
+            } : { id: p.genreId, name: 'Sin clasificar', active: false },
             type: p.tipo === 'Fisico' ? 'Physical' : 'Digital',
             releaseDate: p.fechaLanzamiento,
             developer: p.desarrollador,
-            imageId: p.imagenUrl || 'https://placehold.co/600x400?text=No+Image',
+            imageId: p.imagenUrl || 'https://placehold.co/600x400?text=Sin+Imagen',
             trailerUrl: p.trailerUrl || '',
             rating: Number(p.calificacion),
             // RN - Disponibilidad Digital: Si es Digital, el stock real es el conteo de Keys disponibles en BDD.
@@ -194,9 +196,21 @@ class ProductService extends BaseService {
     /**
      * Alias compatible con controladores existentes.
      * Invoca el método base de búsqueda por ID.
+     * RN (Contexto): Soporta includeInactive=true para endpoints administrativos.
+     * @param {string} id - UUID del producto.
+     * @param {object} context - Contexto de consulta.
+     * @param {boolean} context.includeInactive - Incluye inactivos cuando el rol lo permite.
      */
-    async getProductById(id) {
-        return this.getById(id);
+    async getProductById(id, context = {}) {
+        const { includeInactive = false } = context;
+        const product = await this.getById(id, { includeInactive });
+
+        // Si la taxonomia relacionada fue dada de baja, el producto no debe exponerse en tienda publica.
+        if (!includeInactive && (product.platform?.active === false || product.genre?.active === false)) {
+            throw new ErrorResponse('Producto no disponible', 404);
+        }
+
+        return product;
     }
 
     /**
@@ -245,7 +259,7 @@ class ProductService extends BaseService {
                 tipo,
                 fechaLanzamiento: releaseDate ? new Date(releaseDate) : new Date(),
                 desarrollador: developer,
-                imagenUrl: imageId || 'https://placehold.co/600x400?text=No+Image',
+                imagenUrl: imageId || 'https://placehold.co/600x400?text=Sin+Imagen',
                 trailerUrl: trailerUrl || null,
                 stock: tipo === 'Digital' ? 0 : (stock ?? 0),
                 activo: active !== undefined ? active : true,

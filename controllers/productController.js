@@ -60,6 +60,21 @@ exports.getProduct = async (req, res, next) => {
 };
 
 /**
+ * Detalle administrativo de producto.
+ * Permite recuperar productos inactivos para su gestion interna.
+ * RN (RBAC): El contexto `includeInactive=true` solo se utiliza en rutas
+ * protegidas por middleware de rol administrador.
+ */
+exports.getProductAdmin = async (req, res, next) => {
+  try {
+    const product = await ProductService.getProductById(req.params.id, { includeInactive: true });
+    res.status(200).json({ success: true, data: product });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Crea la base de un nuevo bien con todo su árbol relacional precompilado
  * (Soporta Plataformas, Géneros e insersión M2M de Etiquetas de Sistema).
  */
