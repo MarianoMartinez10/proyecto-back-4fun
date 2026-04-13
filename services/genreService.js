@@ -1,6 +1,17 @@
+/**
+ * Capa de Servicios: Taxonomías (Géneros)
+ * --------------------------------------------------------------------------
+ * Especializa la clase abstracta MetadataService para lidiar únicamente con 
+ * la tabla de Géneros, logrando una altísima Mantenibilidad (Código DRY).
+ */
+
 const MetadataService = require('./metadataService');
 
 class GenreService extends MetadataService {
+    /**
+     * RN Arquitectura (Herencia de Dominio): Inyecta los parámetros vitales al super(),
+     * resolviendo la capa de mensajería ('género no encontrado') dinámicamente.
+     */
     constructor() {
         super('genre', {
             singular: 'género',
@@ -10,7 +21,7 @@ class GenreService extends MetadataService {
         });
     }
 
-    // Aliases mapped explicitly for controller clarity, or controller can just call standard methods.
+    // Aliases semánticos puenteados estrictamente para legibilidad del Controlador
     async getGenres() { return this.getAll(); }
     async getGenreById(id) { return this.getById(id); }
     async createGenre(data) { return this.create(data); }

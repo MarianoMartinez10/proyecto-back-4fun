@@ -1,7 +1,21 @@
+/**
+ * Capa de Controladores: Nomencladores y Categorías (Géneros)
+ * --------------------------------------------------------------------------
+ * Administación CRUD integral para las taxonomías asociadas a los juegos.
+ * Respeta la separación estricta de MVC delegando la interacción de Base 
+ * de Datos (Prisma) al GenreService.
+ */
+
 const GenreService = require('../services/genreService');
 const parseBulkIds = require('../utils/parseBulkIds');
 
-// Get all genres
+/**
+ * Recupera el catálogo maestro de todos los géneros habilitados.
+ * 
+ * @param {Object} req - Petición HTTP.
+ * @param {Object} res - Respuesta HTTP serializada en arreglo plano.
+ * @returns {Array} Listado.
+ */
 exports.getGenres = async (req, res, next) => {
     try {
         const genres = await GenreService.getGenres();
@@ -11,19 +25,26 @@ exports.getGenres = async (req, res, next) => {
     }
 };
 
-// Get genre by ID
+/**
+ * Recupera un género particular identificándolo unívocamente.
+ */
 exports.getGenre = async (req, res, next) => {
     try {
         const genre = await GenreService.getGenreById(req.params.id);
         res.status(200).json({ success: true, data: genre });
     } catch (error) {
+        // Manejo Excepciones: Si no existe, el 404 lanzado desde el Service se atrapa globalmente aquí.
         next(error);
     }
 };
 
-// Create genre
+/**
+ * Crea una nueva entidad de categorización en la plataforma.
+ */
 exports.createGenre = async (req, res, next) => {
     try {
+        // RN: Toda nueva inserción validará campos de unicidad estructural (Ej. Nombres únicos)
+        // a nivel sistema, y lanzará ErrorResponse de fallar.
         const genre = await GenreService.createGenre(req.body);
         res.status(201).json(genre);
     } catch (error) {
@@ -31,7 +52,9 @@ exports.createGenre = async (req, res, next) => {
     }
 };
 
-// Update genre (UPSERT - Update or Insert)
+/**
+ * Mutación (UPSERT paramétrico) de una rama de taxonomía.
+ */
 exports.updateGenre = async (req, res, next) => {
     try {
         const genre = await GenreService.updateGenre(req.params.id, req.body);
@@ -44,7 +67,11 @@ exports.updateGenre = async (req, res, next) => {
     }
 };
 
-// Delete genre (Soft Delete)
+/**
+ * Baja de entidad Singular protegiendo integridad referencial.
+ * RN (Regla de Mantebilidad): Emplea "Soft Delete" o deshabilitación pasiva
+ * para no romper los históricos de compras o productos.
+ */
 exports.deleteGenre = async (req, res, next) => {
     try {
         await GenreService.deleteGenre(req.params.id);
@@ -54,10 +81,15 @@ exports.deleteGenre = async (req, res, next) => {
     }
 };
 
-// Delete multiple genres (Soft Delete)
+/**
+ * Supresión masiva en Batch (Multiselect UI del panel Admin).
+ * Interrumpe en caso de error sistémico con rollback gestionado por utilidades.
+ */
 exports.deleteGenres = async (req, res, next) => {
     try {
+        // Helper utilitario que unifica el parseo de IDs procedentes en strings o arrays via Query.
         const ids = parseBulkIds(req);
+        
         const result = await GenreService.deleteGenres(ids);
 
         res.status(200).json({

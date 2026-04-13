@@ -4,28 +4,29 @@ const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
 /**
- * UserService — Servicio de dominio para la gestión de usuarios.
- *
- * Hereda de BaseService, reutilizando las operaciones CRUD genéricas
- * (getAll, getById, deleteById) y sobrescribiendo los métodos polimórficos:
- *   - toDTO()          → Proyecta los campos seguros del usuario (excluye password).
- *   - getSelectFields() → Restringe la consulta SQL a campos no sensibles.
- *
- * Principios POO demostrados:
- *   - Herencia: extiende BaseService para reutilizar lógica CRUD.
- *   - Polimorfismo: redefine toDTO() y getSelectFields() según el dominio User.
- *   - Encapsulamiento: los campos sensibles (password, tokens) nunca se exponen.
+ * Capa de Servicios: Gestión de Identidades (User Domain)
+ * --------------------------------------------------------------------------
+ * Gestiona el ciclo de vida de los perfiles de usuario. Implementa patrones
+ * de Herencia y Polimorfismo al especializar `BaseService` para la
+ * administración de registros. (MVC / Dominio)
  */
+
 class UserService extends BaseService {
+    /**
+     * @constructor
+     * Inyecta la configuración de persistencia para la tabla 'user'.
+     */
     constructor() {
         super('user', { entityLabel: 'Usuario' });
     }
 
     /**
-     * Campos seguros para proyección en consultas de lectura.
-     * Excluye: password, verificationToken, resetPasswordToken, etc.
-     * Sobrescribe BaseService.getSelectFields() (polimorfismo).
-     * @returns {object} Objeto select de Prisma
+     * Define los campos seguros para la proyección SQL.
+     * RN - Seguridad: Impide la filtración de hashes de contraseñas y tokens 
+     * sensibles al nivel de la consulta de base de datos.
+     * 
+     * @override Polimorfismo - Especializa la selección de campos del orquestador base.
+     * @returns {Object} Configuración de Prisma Select.
      */
     getSelectFields() {
         return {
@@ -42,15 +43,17 @@ class UserService extends BaseService {
     }
 
     /**
-     * Transforma un User de Prisma al DTO de respuesta API.
-     * Sobrescribe BaseService.toDTO() (polimorfismo).
-     * @param {object} user - Entidad User de Prisma
-     * @returns {object} DTO seguro del usuario
+     * Mapeador de Dominio (Entity to DTO).
+     * Asegura que el contrato de comunicación con el frontend sea inmutable y seguro.
+     * 
+     * @override Polimorfismo - Transforma la entidad User en un DTO limpio.
+     * @param {Object} user - Entidad cruda de Prisma.
+     * @returns {Object} DTO de usuario para consumo público.
      */
     toDTO(user) {
         return {
             id: user.id,
-            _id: user.id,
+            _id: user.id, // Compatibilidad histórica con interfaces previas
             name: user.name,
             email: user.email,
             avatar: user.avatar || null,
@@ -62,39 +65,36 @@ class UserService extends BaseService {
         };
     }
 
-    // ── Métodos heredados de BaseService (ya disponibles sin código extra):
-    //    getAllUsers()  → this.getAll()
-    //    getUserById()  → this.getById(id)
-    //    deleteUser()   → this.deleteById(id)
-
     /**
-     * Alias para mantener compatibilidad con los controladores existentes.
-     * Delega al método genérico heredado getAll().
+     * Alias para compatibilidad con controladores legados.
+     * Delega la búsqueda masiva al motor BaseService.
      */
     async getAllUsers() {
         return this.getAll();
     }
 
     /**
-     * Alias para mantener compatibilidad con los controladores existentes.
-     * Delega al método genérico heredado getById().
+     * Alias para compatibilidad con controladores legados.
+     * Delega la resolución singular al motor BaseService.
      */
     async getUserById(id) {
         return this.getById(id);
     }
 
     /**
-     * Actualizar usuario — Lógica específica del dominio User.
-     * No puede generalizarse en BaseService porque cada entidad
-     * tiene campos y reglas de actualización diferentes.
-     * @param {string} id   - UUID del usuario
-     * @param {object} data - Campos a actualizar
-     * @returns {Promise<object>} DTO del usuario actualizado
+     * Modificación parcial del perfil de usuario.
+     * Mantenibilidad: Implementa validación previa y actualización selectiva.
+     * 
+     * @param {string} id - UUID del usuario.
+     * @param {Object} data - Payload de actualización { name, email, phone, etc }.
+     * @returns {Promise<Object>} Perfil actualizado transformado a DTO.
      */
     async updateUser(id, data) {
         const { name, email, phone, address } = data;
+        
+        // Manejo de Excepciones: Verifica existencia antes de intentar la mutación.
         const existing = await this.model.findUnique({ where: { id } });
-        if (!existing) throw new ErrorResponse('Usuario no encontrado', 404);
+        if (!existing) throw new ErrorResponse('Usuario inexistente', 404);
 
         const updated = await this.model.update({
             where: { id },
@@ -104,16 +104,16 @@ class UserService extends BaseService {
                 ...(phone !== undefined && { phone }),
                 ...(address !== undefined && { address }),
             },
-            select: { id: true, name: true, email: true, role: true, phone: true, address: true }
+            select: this.getSelectFields()
         });
 
-        logger.info(`[UserService] Usuario actualizado: ${id}`);
-        return this.toDTO({ ...existing, ...updated });
+        logger.info(`[UserService] Perfil actualizado: ${id}`);
+        return this.toDTO(updated);
     }
 
     /**
-     * Alias para mantener compatibilidad con los controladores existentes.
-     * Delega al método genérico heredado deleteById().
+     * Baja física de cuenta.
+     * @override Polimorfismo - Implementa la destrucción de registro delegada en BaseService.
      */
     async deleteUser(id) {
         return this.deleteById(id);

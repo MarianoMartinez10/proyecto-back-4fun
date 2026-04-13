@@ -1,3 +1,10 @@
+/**
+ * Capa de Servicios: Facturación y Órdenes Core
+ * --------------------------------------------------------------------------
+ * Eje principal del flujo financiero (Checkout Pipeline). Abstrae complejas 
+ * inserciones multifamiliares y control cruzado lógico de base de datos.
+ */
+
 const prisma = require('../lib/prisma');
 const mpService = require('./mercadoPagoService');
 const EmailService = require('./emailService');
@@ -7,6 +14,11 @@ const ErrorResponse = require('../utils/errorResponse');
 
 class OrderService {
 
+    /**
+     * Consolidación Inicial: Chequea inventarios y forja un ticket "Pendiente".
+     * RN (Regla de Atomicidad): Intercepta fallos aislados en reservaciones de stock mediante
+     * heurísticas de compensación manual (Rollback) simuladas.
+     */
     async createOrder({ user, orderItems, shippingAddress, paymentMethod }) {
         if (!orderItems?.length) throw new ErrorResponse('El carrito está vacío.', 400);
 
@@ -16,10 +28,13 @@ class OrderService {
         let calculatedTotal = 0;
         const validatedItems = [];
 
+        // RN (Seguridad de Precios): El frontend manda la intención, el Service reconstruye el ticket
+        // cotizando con valores limpios atados en la Base de Datos para evitar Inyección de Precios.
         for (const item of orderItems) {
             const product = await prisma.product.findUnique({ where: { id: item.product } });
             if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
 
+            // RN de Disponibilidad por Tipología (Físico vs Digital)
             if (product.tipo === 'Digital') {
                 const availableKeys = await prisma.digitalKey.count({
                     where: { productId: item.product, estado: 'DISPONIBLE' }
@@ -36,7 +51,7 @@ class OrderService {
                 id: product.id,
                 title: item.name,
                 quantity: Number(item.quantity),
-                unit_price: Number(product.precio),
+                unit_price: Number(product.precio), // Precio auditado y sellado.
                 currency_id: 'ARS',
                 picture_url: item.image || undefined,
                 description: product.descripcion?.substring(0, 200) || '',
@@ -44,7 +59,8 @@ class OrderService {
             });
         }
 
-        // Reserve stock atomically
+        // RN (Gestión de Inventario Optimista): Reduce los saldos provisionalmente asumiendo 
+        // voluntad total de pago por parte del cliente.
         for (const item of validatedItems) {
             if (item.tipo !== 'Digital') {
                 const updated = await prisma.product.updateMany({
@@ -52,7 +68,7 @@ class OrderService {
                     data: { stock: { decrement: item.quantity }, cantidadVendida: { increment: item.quantity } }
                 });
                 if (updated.count === 0) {
-                    // Rollback
+                    // Compensatory Action (Sudo Rollback manual)
                     for (const prev of validatedItems) {
                         if (prev.id === item.id) break;
                         await prisma.product.update({ where: { id: prev.id }, data: { stock: { increment: prev.quantity }, cantidadVendida: { decrement: prev.quantity } } });
@@ -62,7 +78,7 @@ class OrderService {
             }
         }
 
-        // Create order
+        // DML de Inserción Relacional Compleja
         const order = await prisma.order.create({
             data: {
                 userId: user.id || user._id?.toString() || user,
@@ -77,19 +93,22 @@ class OrderService {
                     create: validatedItems.map(i => ({
                         productId: i.id,
                         quantity: i.quantity,
-                        unitPriceAtPurchase: i.unit_price
+                        unitPriceAtPurchase: i.unit_price // Snapshot histórico para contabilidad inmutable.
                     }))
                 }
             }
         });
 
         try {
+            // Emisión de token cifrado a MP
             const mpResponse = await mpService.createPreference(order.id, validatedItems, backendUrl, user);
             await prisma.order.update({ where: { id: order.id }, data: { externalId: mpResponse.id } });
+            
             logger.info(`Orden ${order.id} creada. Link de pago generado.`);
             return { orderId: order.id, paymentLink: mpResponse.paymentLink, order: { ...order, _id: order.id } };
         } catch (mpError) {
-            logger.error(`Error al crear preferencia MP para orden ${order.id}. Rollback.`, { error: mpError.message });
+            // Rollback Extremo: Cancela boleta e inventarios si MercadoPago está caído.
+            logger.error(`Error al crear preferencia MP para orden ${order.id}. Rollback ejecutado.`, { error: mpError.message });
             for (const item of validatedItems) {
                 if (item.tipo !== 'Digital') {
                     await prisma.product.update({ where: { id: item.id }, data: { stock: { increment: item.quantity } } });
@@ -100,6 +119,10 @@ class OrderService {
         }
     }
 
+    /**
+     * Orquestador asíncrono para señales HTTP post-pago (MercadoPago Webhooks).
+     * Dispara la asignación de claves lógicas tras verificación matemática positiva.
+     */
     async handleWebhook(headers, body, query) {
         const dataId = body?.data?.id || query['data.id'];
         const type = body?.type || query.type;
@@ -107,6 +130,7 @@ class OrderService {
         if (type !== 'payment') return { status: 'ignored', reason: 'Tipo de notificación no es payment' };
         if (!dataId) throw new Error('Missing payment ID en el webhook');
 
+        // Seguridad: Filtro de identidad para blindar ataque DdoS con Falsos Pagos
         mpService.validateWebhookSignature(headers, dataId);
 
         let paymentInfo;
@@ -120,10 +144,14 @@ class OrderService {
             include: { orderItems: { include: { product: true } } }
         });
         if (!order) throw new Error('Orden no encontrada');
+        
+        // Idempotencia absoluta: Rompe cadena recursiva de requests MP 
         if (order.isPaid) return { status: 'ok', reason: 'Orden ya procesada anteriormente' };
 
         if (paymentInfo.status === 'approved') {
             const deliveredKeys = [];
+            
+            // RN Logística: Despachante Automático de Keys Digitales concurrentes.
             for (const item of order.orderItems) {
                 if (item.product?.tipo === 'Digital') {
                     for (let i = 0; i < item.quantity; i++) {
@@ -141,6 +169,7 @@ class OrderService {
                 }
             }
 
+            // Sello de confirmación y persistencia final (Contabilidad consolidada)
             await prisma.order.update({
                 where: { id: order.id },
                 data: {
@@ -156,6 +185,8 @@ class OrderService {
                 }
             });
 
+            // Disparador de Notificación Email. Emplea Safe Try Catch para mantener
+            // el ciclo HTTP de MP libre de atascos de red SMTP.
             if (deliveredKeys.length > 0) {
                 try {
                     const userData = await prisma.user.findUnique({ where: { id: order.userId } });
@@ -177,6 +208,7 @@ class OrderService {
             include: { orderItems: { include: { product: true } }, shippingAddress: true, digitalKeys: { select: { id: true, clave: true, productId: true } } }
         });
 
+        // Mapeo defensivo de compatibilidad Mongoose->Prisma en fron-end usando _id
         return orders.map(o => ({
             ...o,
             _id: o.id,
@@ -195,7 +227,10 @@ class OrderService {
             where: { id: orderId },
             include: { user: { select: { id: true, name: true, email: true } }, orderItems: { include: { product: true } }, shippingAddress: true }
         });
+        
         if (!order) throw new ErrorResponse('Orden no encontrada', 404);
+        
+        // RN Permisos (Tenencia): Inquisita pertenencia local vs rol piramidal.
         if (order.userId !== userId && userRole !== 'admin') throw new ErrorResponse('No autorizado para ver esta orden', 403);
         
         return { 
@@ -256,6 +291,7 @@ class OrderService {
     async updateOrderStatus(orderId, status) {
         const order = await prisma.order.findUnique({ where: { id: orderId } });
         if (!order) throw new ErrorResponse('Orden no encontrada', 404);
+        
         const updated = await prisma.order.update({ where: { id: orderId }, data: { orderStatus: status } });
         return { ...updated, _id: updated.id };
     }
@@ -263,6 +299,7 @@ class OrderService {
     async updateOrderToPaid(orderId) {
         const order = await prisma.order.findUnique({ where: { id: orderId } });
         if (!order) throw new ErrorResponse('Orden no encontrada', 404);
+        
         const updated = await prisma.order.update({ where: { id: orderId }, data: { isPaid: true, paidAt: new Date() } });
         return { ...updated, _id: updated.id };
     }

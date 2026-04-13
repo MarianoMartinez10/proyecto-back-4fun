@@ -1,5 +1,18 @@
+/**
+ * Capa de Controladores: Reseñas y Calificaciones (Feedback)
+ * --------------------------------------------------------------------------
+ * Orquesta la captura de calificaciones de los clientes. Delega
+ * la pesada carga de ponderación matemática y validaciones anti-spam al
+ * `ReviewService`, respetando los límites MVC.
+ */
+
 const ReviewService = require('../services/reviewService');
 
+/**
+ * Ingresa una nueva reseña de usuario para un producto.
+ * RN (Integridad): Interceptará por medio del ErrorHandler si el usuario
+ * ya había calificado el mismo ítem.
+ */
 exports.createReview = async (req, res, next) => {
   try {
     const { rating, title, text } = req.body;
@@ -14,6 +27,9 @@ exports.createReview = async (req, res, next) => {
   }
 };
 
+/**
+ * Sirve el histórico paginado de opiniones ordenadas según peso.
+ */
 exports.getProductReviews = async (req, res, next) => {
   try {
     const { page, limit, sort } = req.query;
@@ -27,6 +43,9 @@ exports.getProductReviews = async (req, res, next) => {
   }
 };
 
+/**
+ * Procesa la analítica estática (Ej: Promedio, histograma de estrellas).
+ */
 exports.getProductRatingStats = async (req, res, next) => {
   try {
     const stats = await ReviewService.getProductRatingStats(req.params.productId);
@@ -36,6 +55,9 @@ exports.getProductRatingStats = async (req, res, next) => {
   }
 };
 
+/**
+ * Voto de utilidad (Upvote) para el sistema de ranking de comentarios.
+ */
 exports.voteHelpful = async (req, res, next) => {
   try {
     const result = await ReviewService.voteHelpful(req.params.id, req.user.id);
@@ -45,6 +67,9 @@ exports.voteHelpful = async (req, res, next) => {
   }
 };
 
+/**
+ * Módulo de censura/borrado de reseña (Requiere ser dueño o Admin).
+ */
 exports.deleteReview = async (req, res, next) => {
   try {
     const isAdmin = req.user.role === 'admin';

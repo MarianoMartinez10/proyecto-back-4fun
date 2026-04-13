@@ -1,11 +1,21 @@
+/**
+ * Capa de Controladores: Gestión de Usuarios (Admin)
+ * --------------------------------------------------------------------------
+ * Facilita el ABM de cuentas cliente para el Panel de Control.
+ */
+
 const UserService = require('../services/userService');
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
-const prisma = require('../lib/prisma'); // Keep for complex count if service doesn't have it
+const prisma = require('../lib/prisma');
 
-// @desc    Obtener lista de usuarios con paginación, búsqueda y filtros
-// @route   GET /api/users
-// @access  Private/Admin
+/**
+ * Despliega listado masivo con indexación filtrada.
+ * 
+ * @param {Object} req - Peticiones de búsqueda y offset de paginación.
+ * @param {Object} res - JSON unificado.
+ * @param {Function} next - Trampa de excepciones.
+ */
 exports.getUsers = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -28,6 +38,8 @@ exports.getUsers = async (req, res, next) => {
 
     const skip = (page - 1) * limit;
     
+    // Tolerancia MVC: Ejecución concurrente in-controller de queries estructurales
+    // para optimizar el cuello de botella al compilar la grilla de front-end.
     const [total, users] = await Promise.all([
       prisma.user.count({ where }),
       prisma.user.findMany({
@@ -61,21 +73,20 @@ exports.getUsers = async (req, res, next) => {
   }
 };
 
-// @desc    Obtener perfil completo de usuario con métricas y pedidos
-// @route   GET /api/users/:id
-// @access  Private/Admin
+/**
+ * Compila una biometría profunda acoplando el KYC del usuario con su traza contable.
+ */
 exports.getUserById = async (req, res, next) => {
   try {
     const user = await UserService.getUserById(req.params.id);
 
-    // Órdenes del usuario (this logic stays for now or could be moved to OrderService)
+    // Mantenibilidad: Se acopla recuento logístico en línea para ahorrar requests adyacentes.
     const orders = await prisma.order.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
       include: { orderItems: true, shippingAddress: true }
     });
 
-    // Métricas calculadas
     const paidOrders = orders.filter(o => o.isPaid);
     const totalSpent = paidOrders.reduce((sum, o) => sum + Number(o.totalPrice), 0);
     const lastOrderDate = paidOrders.length > 0 ? paidOrders[0].createdAt : null;
@@ -84,12 +95,7 @@ exports.getUserById = async (req, res, next) => {
       success: true,
       data: {
         ...user,
-        stats: {
-          totalSpent,
-          orderCount: paidOrders.length,
-          totalOrders: orders.length,
-          lastOrderDate
-        },
+        stats: { totalSpent, orderCount: paidOrders.length, totalOrders: orders.length, lastOrderDate },
         orders: orders.map(o => ({
           id: o.id,
           createdAt: o.createdAt,
@@ -97,27 +103,23 @@ exports.getUserById = async (req, res, next) => {
           orderStatus: o.orderStatus,
           isPaid: o.isPaid,
           itemCount: o.orderItems.length,
-          items: o.orderItems.map(i => ({
-            name: i.name,
-            quantity: i.quantity,
-            price: Number(i.price)
-          }))
+          items: o.orderItems.map(i => ({ name: i.name, quantity: i.quantity, price: Number(i.price) }))
         }))
       }
     });
-
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Actualizar usuario (Rol, Verificación)
-// @route   PUT /api/users/:id
-// @access  Private/Admin
+/**
+ * Modificador forzoso de permisos (Privilege Escalation admin-only).
+ */
 exports.updateUser = async (req, res, next) => {
   try {
     const { role, isVerified, name, email } = req.body;
 
+    // RN (Regla de Seguridad Base): Un jerarca no puede degradarse a sí mismo (Lockout prevention).
     if (req.user.id === req.params.id && role && role !== 'admin') {
       throw new ErrorResponse('No puedes cambiar tu propio rol de administrador.', 400);
     }
@@ -126,21 +128,18 @@ exports.updateUser = async (req, res, next) => {
 
     logger.info(`Usuario actualizado por Admin: ${req.user.email}`, { targetUser: user.email });
 
-    res.status(200).json({
-      success: true,
-      data: user
-    });
-
+    res.status(200).json({ success: true, data: user });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Eliminar usuario
-// @route   DELETE /api/users/:id
-// @access  Private/Admin
+/**
+ * Expulsión del sistema vía Hard-delete.
+ */
 exports.deleteUser = async (req, res, next) => {
   try {
+    // RN (Seguridad): Suicide prevention
     if (req.user.id === req.params.id) {
       throw new ErrorResponse('No puedes eliminar tu propia cuenta de administrador.', 400);
     }
@@ -149,13 +148,8 @@ exports.deleteUser = async (req, res, next) => {
 
     logger.warn(`Usuario ELIMINADO por Admin: ${req.user.email}`);
 
-    res.status(200).json({
-      success: true,
-      data: {}
-    });
-
+    res.status(200).json({ success: true, data: {} });
   } catch (error) {
     next(error);
   }
 };
-

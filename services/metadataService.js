@@ -1,11 +1,18 @@
+/**
+ * Capa de Servicios: ORM Abstracto Multientidad (Metadata)
+ * --------------------------------------------------------------------------
+ * Actúa como una clase maestra (Template Pattern) para unificar la operatoria CRUD
+ * de diferentes taxonomías con estructuras gemelas en la tabla de Prisma (Ej. Géneros y Plataformas).
+ */
+
 const prisma = require('../lib/prisma');
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
 class MetadataService {
     /**
-     * @param {'platform'|'genre'} modelName
-     * @param {object} labels
+     * @param {string} modelName - Nombre literal de la Entidad Prisma.
+     * @param {Object} labels - Diccionario para inyectar semántica a las excepciones genéricas.
      */
     constructor(modelName, { singular, plural, notFoundMsg, productField }) {
         this.modelName = modelName;
@@ -16,7 +23,10 @@ class MetadataService {
         this.productField = productField;
     }
 
-    // DTO mapper: Prisma entity → API response
+    /**
+     * Data Transfer Object (DTO) Mapper.
+     * Oculta a la capa de presentación si en base de datos la columna es `nombre` o `activo`.
+     */
     toDTO(doc) {
         return {
             id: doc.id,
@@ -33,17 +43,17 @@ class MetadataService {
     }
 
     async getById(id) {
-        // Intentar por slug primero, luego por UUID
         let doc = await this.model.findFirst({ where: { slug: id } });
-        if (!doc) {
-            doc = await this.model.findFirst({ where: { id } });
-        }
+        if (!doc) doc = await this.model.findFirst({ where: { id } });
+        
         if (!doc) throw new ErrorResponse(this.notFoundMsg || `${this.singular} no encontrado`, 404);
         return this.toDTO(doc);
     }
 
     async create(data) {
         const { id: slug, name, imageId, active } = data;
+        
+        // RN: Garantizar que el identificador descriptivo amigable para URLs no venga vacío
         if (!slug) throw new ErrorResponse('El ID personalizado (slug) es requerido', 400);
 
         const existing = await this.model.findFirst({ where: { slug } });
@@ -52,6 +62,7 @@ class MetadataService {
         const doc = await this.model.create({
             data: { slug, nombre: name, imageId, activo: active !== undefined ? active : true }
         });
+        
         logger.info(`${this.singular} creado: ${doc.slug}`);
         return this.toDTO(doc);
     }
@@ -66,6 +77,8 @@ class MetadataService {
         let doc = await this.model.findFirst({ where: { slug: id } });
         if (!doc) throw new ErrorResponse(this.notFoundMsg || `${this.singular} no encontrado`, 404);
 
+        // RN (Integridad Referencial Custom): Si cambiamos el Primary Slug identificador, nos aseguramos
+        // de no pisar uno previamente empleado por otra categoría.
         if (newSlug && newSlug !== id) {
             const existing = await this.model.findFirst({ where: { slug: newSlug } });
             if (existing) throw new ErrorResponse(`El ID '${newSlug}' ya está en uso`, 400);
@@ -74,7 +87,7 @@ class MetadataService {
 
         const updated = await this.model.update({ where: { id: doc.id }, data: updateData });
 
-        // Si cambió el slug, actualizar FK en Product
+        // RN Mantenibilidad Continua: Propaga automáticamente el FK cascade si el índice fue mutado por UI
         if (newSlug && newSlug !== id && this.productField) {
             const count = await prisma.product.updateMany({
                 where: { [this.productField]: doc.id },
@@ -86,6 +99,9 @@ class MetadataService {
         return this.toDTO(updated);
     }
 
+    /**
+     * RN (Soft Delete universal): Suprime entidades de la pantalla pública apagando su bandera `activo`.
+     */
     async deleteOne(id) {
         let doc = await this.model.findFirst({ where: { slug: id } });
         if (!doc) doc = await this.model.findFirst({ where: { id } });
@@ -103,6 +119,7 @@ class MetadataService {
             where: { OR: [{ slug: { in: ids } }, { id: { in: ids } }] },
             data: { activo: false }
         });
+        
         logger.info(`${this.plural} eliminados (soft delete): ${result.count}`);
         return result;
     }

@@ -8,21 +8,49 @@ const {
   updateOrderStatus,
   updateOrderToPaid,
   receiveWebhook,
-  paymentFeedback // <--- Importamos el puente
+  paymentFeedback
 } = require('../controllers/orderController');
 const { protect, authorize } = require('../middlewares/auth');
 
-// Rutas PÚBLICAS para Mercado Pago (Webhook y Feedback)
-router.post('/webhook', receiveWebhook);
-router.get('/feedback', paymentFeedback); // <--- Nueva ruta pública
+/**
+ * Capa de Enrutamiento: Ciclo de Vida de Órdenes y Pagos (Orders)
+ * --------------------------------------------------------------------------
+ * Orquesta el flujo transaccional de la plataforma.
+ * Implementa un modelo de seguridad mixto: público para señales de pasarela
+ * y privado para gestión de usuario/vendedor. (MVC / Router)
+ */
 
-// Rutas Protegidas
+// ─── RUTAS DE INTEGRACIÓN (PÚBLICAS) ───
+// Necesarias para la comunicación asíncrona con el servidor de Mercado Pago.
+
+/** @route POST /api/orders/webhook - Recepción de señales de estado de pago (IPN). */
+router.post('/webhook', receiveWebhook);
+
+/** @route GET /api/orders/feedback - Puente de retorno visual para el cliente post-checkout. */
+router.get('/feedback', paymentFeedback);
+
+
+// ─── RUTAS DE USUARIO (PROTEGIDAS) ───
+
+/** @route POST /api/orders - Iniciación de compra y reserva de stock. */
 router.post('/', protect, createOrder);
-router.get('/', protect, authorize('admin'), getAllOrders);
+
+/** @route GET /api/orders/user - Historial de adquisiciones del usuario en sesión. */
 router.get('/user', protect, getUserOrders);
+
+/** @route GET /api/orders/:id - Detalle extendido de una orden específica (incluye claves si aplica). */
 router.get('/:id', protect, getOrder);
+
+
+// ─── GESTIÓN ADMINISTRATIVA (RESTRICTED) ───
+
+/** @route GET /api/orders - Panel de control masivo de transacciones. */
+router.get('/', protect, authorize('admin'), getAllOrders);
+
+/** @route PUT /api/orders/:id/pay - Forzado manual de estado 'Pagado' (Auditoría). */
 router.put('/:id/pay', protect, authorize('admin'), updateOrderToPaid);
-router.patch('/:id/status', protect, authorize('admin'), updateOrderStatus); // New Requirement (PATCH)
-router.put('/:id/deliver', protect, authorize('admin'), updateOrderStatus); // Legacy support
+
+/** @route PATCH /api/orders/:id/status - Mutación de estados logísticos (Processing/Delivered). */
+router.patch('/:id/status', protect, authorize('admin'), updateOrderStatus);
 
 module.exports = router;
