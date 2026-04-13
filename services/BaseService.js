@@ -79,29 +79,36 @@ class BaseService {
 
     /**
      * Devuelve colección de registros transformados a DTO.
+     * RN (Filtro): Solo retorna registros con estado 'activo: true' para limpieza de datos.
      * @returns {Promise<Array>} Lista de registros.
      */
     async getAll() {
-        const queryOptions = {};
+        // Estructura de consulta con filtro de vitalidad por defecto.
+        const queryOptions = { 
+            where: { activo: { not: false } } 
+        };
+        
         const select = this.getSelectFields();
         const include = this.getIncludeRelations();
 
         if (select) queryOptions.select = select;
         if (include) queryOptions.include = include;
 
-        // No se requiere Try-Catch interno porque ErrorHandler perimetral lo interceptará (P20XX).
         const entities = await this.model.findMany(queryOptions);
-        logger.info(`[${this.constructor.name}] ${this.entityLabel}(s) obtenidos: ${entities.length}`);
+        logger.info(`[${this.constructor.name}] ${this.entityLabel}(s) activos obtenidos: ${entities.length}`);
         return entities.map(entity => this.toDTO(entity));
     }
 
     /**
      * Devuelve una entidad única.
+     * RN (Audit): No permite recuperar objetos marcados como inactivos (Baja Lógica).
      * @param {string} id - Clave primaria UUID.
      * @returns {Promise<object>}
      */
     async getById(id) {
-        const queryOptions = { where: { id } };
+        const queryOptions = { 
+            where: { id, activo: { not: false } } 
+        };
         const select = this.getSelectFields();
         const include = this.getIncludeRelations();
 
@@ -110,26 +117,35 @@ class BaseService {
 
         const entity = await this.model.findUnique(queryOptions);
         
-        // Manejo de Excepción Comercial: Registro eliminado o inexistente arroja 404.
         if (!entity) {
-            throw new ErrorResponse(`${this.entityLabel} no encontrado`, 404);
+            throw new ErrorResponse(`${this.entityLabel} no encontrado o inactivo`, 404);
         }
         return this.toDTO(entity);
     }
 
     /**
-     * Purga lógicamente o físicamente un registro por su ID.
+     * Purga lógicamente un registro por su ID (Regla 2 TFI).
+     * -------------------------------------------------------------------------
+     * En lugar de borrar físicamente (DELETE), muta el estado a 'activo: false'.
+     * Esto garantiza la trazabilidad histórica y consistencia referencial.
+     * 
      * @param {string} id - UUID del ítem.
      * @returns {Promise<boolean>}
      */
     async deleteById(id) {
+        // Verificación de Pre-Existencia
         const entity = await this.model.findUnique({ where: { id } });
         if (!entity) {
             throw new ErrorResponse(`${this.entityLabel} no encontrado`, 404);
         }
 
-        await this.model.delete({ where: { id } });
-        logger.info(`[${this.constructor.name}] ${this.entityLabel} eliminado: ${id}`);
+        // Operación de Mutación (Logical Delete)
+        await this.model.update({ 
+            where: { id }, 
+            data: { activo: false } 
+        });
+        
+        logger.warn(`[${this.constructor.name}] ${this.entityLabel} dado de baja lógica: ${id}`);
         return true;
     }
 

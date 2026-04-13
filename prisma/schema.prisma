@@ -47,6 +47,7 @@ model User {
   address              String?
   role                 Role      @default(user)
   isVerified           Boolean   @default(false)
+  activo               Boolean   @default(true)
   verificationToken    String?
   verificationTokenExp DateTime?
   resetPasswordToken   String?
@@ -247,6 +248,7 @@ model Review {
   sentiment         Sentiment?
   sentimentScore    Decimal?   @db.Decimal(5, 4)
   verified          Boolean    @default(false)
+  activo            Boolean    @default(true)
   helpfulCount      Int        @default(0)
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
@@ -291,6 +293,7 @@ model DigitalKey {
   productId  String
   clave      String    @unique
   estado     KeyStatus @default(DISPONIBLE)
+  activo     Boolean   @default(true)
   orderId    String?
   fechaVenta DateTime?
   createdAt  DateTime  @default(now())
