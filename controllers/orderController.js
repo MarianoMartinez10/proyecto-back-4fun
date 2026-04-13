@@ -29,52 +29,6 @@ exports.createOrder = async (req, res, next) => {
 };
 
 /**
- * Receptor (Listener) Asíncrono para eventos M2M de MercadoPago.
- * 
- * @param {Object} req - Webhook payload enviado desde los servidores de MP.
- * @param {Object} res - HTTP Status para responderle al bot de MP.
- */
-exports.receiveWebhook = async (req, res) => {
-  try {
-    // MVC: Controller parsea headers de autenticación del webhook, el Servicio verifica firmas.
-    await OrderService.handleWebhook(req.headers, req.body, req.query);
-    res.status(200).send('OK');
-  } catch (error) {
-    logger.error('Webhook Error:', error.message);
-    
-    // Tratamiento Específico de Excepción y Regla de Negocio (Idempotencia):
-    // MercadoPago reintenta colisiones frenéticamente si devolvemos 500. 
-    // Al forzar un HTTP 400 frenamos la recurrencia sobre notificaciones fantasma.
-    if (error.message === 'Missing payment ID' || error.message === 'Pago no encontrado') {
-      return res.status(400).json({ error: error.message });
-    }
-    
-    res.status(500).json({ error: error.message });
-  }
-};
-
-/**
- * Intermediario que encauza las redirecciones de éxito/falla post-pago.
- * Funciona como proxy entre el entorno Local/Vercel y el dominio del Frontend.
- */
-exports.paymentFeedback = (req, res) => {
-  const { status, payment_id, external_reference } = req.query;
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:9002';
-
-  let redirectPath = '/checkout/pending';
-  // RN Estado Frontal: Mapea dicotómicamente los estados crudos financieros a Single Page Application Routes.
-  if (status === 'approved') redirectPath = '/checkout/success';
-  else if (status === 'failure' || status === 'rejected') redirectPath = '/checkout/failure';
-
-  const destination = new URL(`${frontendUrl}${redirectPath}`);
-  if (payment_id) destination.searchParams.append('payment_id', payment_id);
-  if (external_reference) destination.searchParams.append('external_reference', external_reference);
-
-  logger.info(`🔀 Redirigiendo usuario (Puente) a: ${destination.toString()}`);
-  res.redirect(destination.toString());
-};
-
-/**
  * Consulta de facturación histórica restringida al cliente autenticado.
  */
 exports.getUserOrders = async (req, res, next) => {

@@ -6,9 +6,7 @@ const {
   getUserOrders,
   getAllOrders,
   updateOrderStatus,
-  updateOrderToPaid,
-  receiveWebhook,
-  paymentFeedback
+  updateOrderToPaid
 } = require('../controllers/orderController');
 const { protect, authorize } = require('../middlewares/auth');
 
@@ -19,15 +17,6 @@ const { protect, authorize } = require('../middlewares/auth');
  * Implementa un modelo de seguridad mixto: público para señales de pasarela
  * y privado para gestión de usuario/vendedor. (MVC / Router)
  */
-
-// ─── RUTAS DE INTEGRACIÓN (PÚBLICAS) ───
-// Necesarias para la comunicación asíncrona con el servidor de Mercado Pago.
-
-/** @route POST /api/orders/webhook - Recepción de señales de estado de pago (IPN). */
-router.post('/webhook', receiveWebhook);
-
-/** @route GET /api/orders/feedback - Puente de retorno visual para el cliente post-checkout. */
-router.get('/feedback', paymentFeedback);
 
 
 // ─── RUTAS DE USUARIO (PROTEGIDAS) ───
