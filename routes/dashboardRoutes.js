@@ -19,8 +19,8 @@ router.use(authorize('admin'));
 /** @route GET /api/dashboard/stats - Indicadores macro de rendimiento (Revenue). */
 router.get('/stats', getStats);
 
-/** @route GET /api/dashboard/chart - Series temporales para visualización gráfica. */
-router.get('/chart', getSalesChart);
+/** @route GET /api/dashboard/sales-chart - Series temporales para visualización gráfica. */
+router.get('/sales-chart', getSalesChart);
 
 /** @route GET /api/dashboard/top-products - Ranking de rentabilidad por artículo. */
 router.get('/top-products', getTopProducts);
