@@ -106,7 +106,31 @@ class EmailService {
 
   // Métodos de ensamblaje de plantillas
   async sendWelcomeEmail({ name, email, verificationToken }) { /* HTML Omitido por Brevedad Logica */ return this.sendEmail({ to: email, subject: 'Bienvenido', html: `Token: ${verificationToken}` }); }
-  async sendDigitalProductDelivery(user, order, keys) { /* HTML Omitido */ return this.sendEmail({ to: user.email, subject: `Keys #${order._id}`, html: 'Keys...' }); }
+  async sendDigitalProductDelivery(user, order, keys) {
+    const customerName = user?.name || 'Cliente';
+    const orderId = order?._id || order?.id || 'N/A';
+    const keysList = Array.isArray(keys)
+      ? keys.map((k, index) => `<li style="margin-bottom:8px;"><strong>Key ${index + 1}:</strong> ${k.clave}</li>`).join('')
+      : '';
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;max-width:640px;margin:0 auto;">
+        <h2 style="margin:0 0 12px;">Tu compra fue acreditada</h2>
+        <p>Hola ${customerName},</p>
+        <p>Confirmamos el pago de tu orden <strong>#${orderId}</strong>. Estas son tus claves digitales:</p>
+        <ul style="padding-left:20px;">${keysList}</ul>
+        <p>Guarda este correo en un lugar seguro para futuras consultas.</p>
+        <hr style="border:none;border-top:1px solid #ddd;margin:18px 0;" />
+        <p style="font-size:12px;color:#555;">4Fun Store - Entrega automatica de licencias digitales</p>
+      </div>
+    `;
+
+    return this.sendEmail({
+      to: user.email,
+      subject: `Tus keys digitales - Orden #${orderId}`,
+      html
+    });
+  }
   async sendContactNotification({ fullName, email, message }) { /* HTML Omitido */ return this.sendEmail({ to: email, subject: 'Contacto', html: message }); }
   async sendPasswordResetEmail({ name, email, resetUrl }) { /* HTML Omitido */ return this.sendEmail({ to: email, subject: 'Reset', html: resetUrl }); }
 }

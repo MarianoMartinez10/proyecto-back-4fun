@@ -79,13 +79,15 @@ class ProductService extends BaseService {
             discountPercentage,
             discountEndDate: p.descuentoFechaFin,
             platform: p.platform ? {
-                id: p.platform.slug,
+                id: p.platform.id,
+                slug: p.platform.slug,
                 name: p.platform.nombre,
                 imageId: p.platform.imageId,
                 active: p.platform.activo
             } : { id: p.platformId, name: 'Sin clasificar', active: false },
             genre: p.genre ? {
-                id: p.genre.slug,
+                id: p.genre.id,
+                slug: p.genre.slug,
                 name: p.genre.nombre,
                 imageId: p.genre.imageId,
                 active: p.genre.activo
@@ -232,15 +234,27 @@ class ProductService extends BaseService {
      * @returns {Object} DTO del producto creado.
      */
     async createProduct(data) {
-        const { name, description, price, platform: platformSlug, genre: genreSlug, type,
+        const { name, description, price, platform: platformSlug, genre: genreSlug, platformId, genreId, type,
             releaseDate, developer, imageId, trailerUrl, stock, active, specPreset,
             requirements, discountPercentage, discountEndDate } = data;
 
         // RN - Validación Cruzada: Verifica existencia de dependencias taxonómicas activas.
-        const platformRecord = await prisma.platform.findFirst({ where: { slug: platformSlug, activo: true } });
+        let platformRecord = null;
+        if (platformId) {
+            platformRecord = await prisma.platform.findFirst({ where: { id: platformId, activo: true } });
+        }
+        if (!platformRecord && platformSlug) {
+            platformRecord = await prisma.platform.findFirst({ where: { slug: platformSlug, activo: true } });
+        }
         if (!platformRecord) throw new ErrorResponse(`Plataforma '${platformSlug}' no encontrada`, 400);
 
-        const genreRecord = await prisma.genre.findFirst({ where: { slug: genreSlug, activo: true } });
+        let genreRecord = null;
+        if (genreId) {
+            genreRecord = await prisma.genre.findFirst({ where: { id: genreId, activo: true } });
+        }
+        if (!genreRecord && genreSlug) {
+            genreRecord = await prisma.genre.findFirst({ where: { slug: genreSlug, activo: true } });
+        }
         if (!genreRecord) throw new ErrorResponse(`Género '${genreSlug}' no encontrado`, 400);
 
         // RN - Ordenamiento default: Los nuevos se ubican al final del stack.
@@ -311,12 +325,18 @@ class ProductService extends BaseService {
 
         const effectiveType = updateData.tipo || existing.tipo;
 
-        if (data.platform !== undefined) {
+        if (data.platformId !== undefined) {
+            const p = await prisma.platform.findFirst({ where: { id: data.platformId, activo: true } });
+            if (p) updateData.platformId = p.id;
+        } else if (data.platform !== undefined) {
             const p = await prisma.platform.findFirst({ where: { slug: data.platform, activo: true } });
             if (p) updateData.platformId = p.id;
         }
 
-        if (data.genre !== undefined) {
+        if (data.genreId !== undefined) {
+            const g = await prisma.genre.findFirst({ where: { id: data.genreId, activo: true } });
+            if (g) updateData.genreId = g.id;
+        } else if (data.genre !== undefined) {
             const g = await prisma.genre.findFirst({ where: { slug: data.genre, activo: true } });
             if (g) updateData.genreId = g.id;
         }
