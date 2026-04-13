@@ -6,7 +6,6 @@
  */
 
 const prisma = require('../lib/prisma');
-const mpService = require('./mercadoPagoService');
 const EmailService = require('./emailService');
 const { DEFAULT_IMAGE } = require('../utils/constants');
 const logger = require('../utils/logger');
@@ -99,106 +98,12 @@ class OrderService {
             }
         });
 
-        try {
-            // Emisión de token cifrado a MP
-            const mpResponse = await mpService.createPreference(order.id, validatedItems, backendUrl, user);
-            await prisma.order.update({ where: { id: order.id }, data: { externalId: mpResponse.id } });
-            
-            logger.info(`Orden ${order.id} creada. Link de pago generado.`);
-            return { orderId: order.id, paymentLink: mpResponse.paymentLink, order: { ...order, _id: order.id } };
-        } catch (mpError) {
-            // Rollback Extremo: Cancela boleta e inventarios si MercadoPago está caído.
-            logger.error(`Error al crear preferencia MP para orden ${order.id}. Rollback ejecutado.`, { error: mpError.message });
-            for (const item of validatedItems) {
-                if (item.tipo !== 'Digital') {
-                    await prisma.product.update({ where: { id: item.id }, data: { stock: { increment: item.quantity } } });
-                }
-            }
-            await prisma.order.delete({ where: { id: order.id } });
-            throw new ErrorResponse(`Error al conectar con Mercado Pago: ${mpError.message}`, 502);
-        }
-    }
-
-    /**
-     * Orquestador asíncrono para señales HTTP post-pago (MercadoPago Webhooks).
-     * Dispara la asignación de claves lógicas tras verificación matemática positiva.
-     */
-    async handleWebhook(headers, body, query) {
-        const dataId = body?.data?.id || query['data.id'];
-        const type = body?.type || query.type;
-
-        if (type !== 'payment') return { status: 'ignored', reason: 'Tipo de notificación no es payment' };
-        if (!dataId) throw new Error('Missing payment ID en el webhook');
-
-        // Seguridad: Filtro de identidad para blindar ataque DdoS con Falsos Pagos
-        mpService.validateWebhookSignature(headers, dataId);
-
-        let paymentInfo;
-        try { paymentInfo = await mpService.getPayment(dataId); }
-        catch (err) { throw new Error(`No se pudo obtener el pago ${dataId}: ${err.message}`); }
-
-        if (!paymentInfo) throw new Error('Pago no encontrado en MercadoPago');
-
-        const order = await prisma.order.findUnique({
-            where: { id: paymentInfo.external_reference },
-            include: { orderItems: { include: { product: true } } }
-        });
-        if (!order) throw new Error('Orden no encontrada');
-        
-        // Idempotencia absoluta: Rompe cadena recursiva de requests MP 
-        if (order.isPaid) return { status: 'ok', reason: 'Orden ya procesada anteriormente' };
-
-        if (paymentInfo.status === 'approved') {
-            const deliveredKeys = [];
-            
-            // RN Logística: Despachante Automático de Keys Digitales concurrentes.
-            for (const item of order.orderItems) {
-                if (item.product?.tipo === 'Digital') {
-                    for (let i = 0; i < item.quantity; i++) {
-                        const key = await prisma.digitalKey.findFirst({
-                            where: { productId: item.productId, estado: 'DISPONIBLE' }
-                        });
-                        if (key) {
-                            await prisma.digitalKey.update({
-                                where: { id: key.id },
-                                data: { estado: 'VENDIDA', orderId: order.id, fechaVenta: new Date() }
-                            });
-                            deliveredKeys.push({ productName: item.product.nombre, key: key.clave });
-                        }
-                    }
-                }
-            }
-
-            // Sello de confirmación y persistencia final (Contabilidad consolidada)
-            await prisma.order.update({
-                where: { id: order.id },
-                data: {
-                    isPaid: true, paidAt: new Date(), orderStatus: 'processing',
-                    payment: {
-                        create: {
-                            mpPaymentId: String(paymentInfo.id),
-                            mpStatus: 'approved',
-                            mpPaymentType: paymentInfo.payment_type_id || '',
-                            mpEmail: paymentInfo.payer?.email || ''
-                        }
-                    }
-                }
-            });
-
-            // Disparador de Notificación Email. Emplea Safe Try Catch para mantener
-            // el ciclo HTTP de MP libre de atascos de red SMTP.
-            if (deliveredKeys.length > 0) {
-                try {
-                    const userData = await prisma.user.findUnique({ where: { id: order.userId } });
-                    if (userData) await EmailService.sendDigitalProductDelivery(userData, { ...order, _id: order.id }, deliveredKeys);
-                } catch (emailError) {
-                    logger.error('Error al enviar email de claves:', emailError.message);
-                }
-            }
-            logger.info(`Orden ${order.id} marcada como pagada.`);
-        }
-
-        return { status: 'ok', paymentStatus: paymentInfo.status };
+        logger.info(`Orden ${order.id} creada exitosamente (Pendiente de pago).`);
+        return { 
+            orderId: order.id, 
+            paymentLink: 'https://link.mercadopago.com.ar/4funstore', 
+            order: { ...order, _id: order.id } 
+        };
     }
 
     async getUserOrders(userId) {
