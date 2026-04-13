@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Entidades de Referencia ────────────────────────────────────────────────────
+
+model Platform {
+  id        String    @id @default(uuid())
+  slug      String    @unique
+  nombre    String
+  activo    Boolean   @default(true)
+  imageId   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Genre {
+  id        String    @id @default(uuid())
+  slug      String    @unique
+  nombre    String
+  activo    Boolean   @default(true)
+  imageId   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+// ── Usuario ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  user
+  admin
+}
+
+model User {
+  id                   String    @id @default(uuid())
+  name                 String
+  email                String    @unique
+  password             String
+  avatar               String?
+  phone                String?
+  address              String?
+  role                 Role      @default(user)
+  isVerified           Boolean   @default(false)
+  verificationToken    String?
+  verificationTokenExp DateTime?
+  resetPasswordToken   String?
+  resetPasswordExp     DateTime?
+  createdAt            DateTime  @default(now())
+
+  orders       Order[]
+  cart         Cart?
+  wishlist     Wishlist?
+  reviews      Review[]
+  helpfulVotes ReviewHelpfulVote[]
+}
+
+// ── Producto ──────────────────────────────────────────────────────────────────
+
+enum ProductType {
+  Digital
+  Fisico
+}
+
+enum SpecPreset {
+  Low
+  Mid
+  High
+}
+
+model Product {
+  id                  String      @id @default(uuid())
+  nombre              String
+  descripcion         String
+  precio              Decimal     @db.Decimal(10, 2)
+  platformId          String
+  genreId             String
+  tipo                ProductType
+  fechaLanzamiento    DateTime
+  desarrollador       String
+  imagenUrl           String      @default("https://placehold.co/600x400?text=No+Image")
+  trailerUrl          String?
+  calificacion        Decimal     @default(0) @db.Decimal(3, 2)
+  stock               Int         @default(0)
+  cantidadVendida     Int         @default(0)
+  activo              Boolean     @default(true)
+  specPreset          SpecPreset?
+  descuentoPorcentaje Int         @default(0)
+  descuentoFechaFin   DateTime?
+  orden               Int         @default(0)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  platform      Platform             @relation(fields: [platformId], references: [id])
+  genre         Genre                @relation(fields: [genreId], references: [id])
+  requirements  ProductRequirement[]
+  orderItems    OrderItem[]
+  cartItems     CartItem[]
+  wishlistItems WishlistItem[]
+  reviews       Review[]
+  digitalKeys   DigitalKey[]
+}
+
+// Normalización de "requisitos: Mixed" → tabla propia (3NF)
+model ProductRequirement {
+  id        String  @id @default(uuid())
+  productId String
+  tipo      String  // "minimum" | "recommended"
+  key       String  // "os", "processor", "memory", etc.
+  value     String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// ── Orden ─────────────────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  pending
+  processing
+  shipped
+  delivered
+  cancelled
+}
+
+model Order {
+  id            String      @id @default(uuid())
+  userId        String
+  paymentMethod String      @default("mercadopago")
+  externalId    String?     @unique
+  itemsPrice    Decimal     @db.Decimal(10, 2)
+  shippingPrice Decimal     @db.Decimal(10, 2)
+  totalPrice    Decimal     @db.Decimal(10, 2)
+  orderStatus   OrderStatus @default(pending)
+  isPaid        Boolean     @default(false)
+  paidAt        DateTime?
+  isDelivered   Boolean     @default(false)
+  deliveredAt   DateTime?
+  createdAt     DateTime    @default(now())
+
+  user            User             @relation(fields: [userId], references: [id])
+  shippingAddress ShippingAddress?
+  payment         Payment?
+  orderItems      OrderItem[]
+  digitalKeys     DigitalKey[]
+}
+
+// Normalización de "datos de pago" → tabla propia (3NF)
+model Payment {
+  id            String   @id @default(uuid())
+  orderId       String   @unique
+  mpPaymentId   String?
+  mpStatus      String?
+  mpPaymentType String?
+  mpEmail       String?
+  createdAt     DateTime @default(now())
+
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// Normalización de "shippingAddress: Object embebido" → tabla propia (3NF)
+model ShippingAddress {
+  id       String  @id @default(uuid())
+  orderId  String  @unique
+  fullName String
+  street   String
+  city     String
+  state    String?
+  zip      String
+  country  String
+  order    Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// Normalización del array "orderItems[]" → tabla intermedia (3NF)
+model OrderItem {
+  id                  String  @id @default(uuid())
+  orderId             String
+  productId           String
+  quantity            Int
+  unitPriceAtPurchase Decimal @default(0) @db.Decimal(10, 2)
+  order               Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product             Product @relation(fields: [productId], references: [id])
+}
+
+// ── Carrito ───────────────────────────────────────────────────────────────────
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String     @unique
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+}
+
+// Normalización del array "items[]" → tabla intermedia (3NF)
+model CartItem {
+  id        String  @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int     @default(1)
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+}
+
+// ── Lista de Deseos ───────────────────────────────────────────────────────────
+
+model Wishlist {
+  id     String         @id @default(uuid())
+  userId String         @unique
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items  WishlistItem[]
+}
+
+// Normalización del array "productos[]" → tabla intermedia (3NF)
+model WishlistItem {
+  id            String   @id @default(uuid())
+  wishlistId    String
+  productId     String
+  fechaAgregado DateTime @default(now())
+  wishlist      Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product       Product  @relation(fields: [productId], references: [id])
+
+  @@unique([wishlistId, productId])
+}
+
+// ── Reseñas ───────────────────────────────────────────────────────────────────
+
+enum Sentiment {
+  positive
+  neutral
+  negative
+  mixed
+}
+
+model Review {
+  id                String     @id @default(uuid())
+  userId            String
+  productId         String
+  rating            Int
+  title             String?
+  text              String
+  sentiment         Sentiment?
+  sentimentScore    Decimal?   @db.Decimal(5, 4)
+  verified          Boolean    @default(false)
+  helpfulCount      Int        @default(0)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id])
+  product      Product             @relation(fields: [productId], references: [id])
+  helpfulVotes ReviewHelpfulVote[]
+  keywords     ReviewKeyword[]
+
+  @@unique([userId, productId])
+}
+
+// Normalización del array "sentimentKeywords" (1NF)
+model ReviewKeyword {
+  id        String @id @default(uuid())
+  reviewId  String
+  keyword   String
+  review    Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+}
+
+// Normalización del array "helpfulVoters[]" → tabla intermedia (3NF)
+model ReviewHelpfulVote {
+  id       String @id @default(uuid())
+  reviewId String
+  userId   String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id])
+
+  @@unique([reviewId, userId])
+}
+
+// ── Claves Digitales ──────────────────────────────────────────────────────────
+
+enum KeyStatus {
+  DISPONIBLE
+  VENDIDA
+  RESERVADA
+}
+
+model DigitalKey {
+  id         String    @id @default(uuid())
+  productId  String
+  clave      String    @unique
+  estado     KeyStatus @default(DISPONIBLE)
+  orderId    String?
+  fechaVenta DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+  order   Order?  @relation(fields: [orderId], references: [id])
+}
+
+// ── Cupones ───────────────────────────────────────────────────────────────────
+
+enum DiscountType {
+  percentage
+  fixed
+}
+
+model Coupon {
+  id           String       @id @default(uuid())
+  code         String       @unique
+  discountType DiscountType @default(percentage)
+  value        Decimal      @db.Decimal(10, 2)
+  minPurchase  Decimal      @default(0) @db.Decimal(10, 2)
+  usageLimit   Int?
+  usedCount    Int          @default(0)
+  isActive     Boolean      @default(true)
+  expiryDate   DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}

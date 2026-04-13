@@ -1,0 +1,386 @@
+const BaseService = require('./BaseService');
+const prisma = require('../lib/prisma');
+const ErrorResponse = require('../utils/errorResponse');
+const logger = require('../utils/logger');
+
+/**
+ * Capa de Servicios: Catálogo de Productos (Dominio)
+ * --------------------------------------------------------------------------
+ * Orquesta la lógica fundamental de la mercadería. Implementa patrones de
+ * Herencia y Polimorfismo al especializar `BaseService`.
+ * 
+ * Gestiona tanto productos físicos como digitales, aplicando Reglas de Negocio
+ * diferenciadas para el control de inventario (Stock vs Keys). (MVC)
+ */
+
+const PRODUCT_INCLUDE = {
+    platform: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
+    genre: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
+    _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE' } } } },
+};
+
+class ProductService extends BaseService {
+    /**
+     * @constructor
+     * Inyecta la configuración de entidad al motor base de persistencia.
+     */
+    constructor() {
+        super('product', { entityLabel: 'Producto' });
+    }
+
+    /**
+     * Define el mapa de relaciones 'Eager Loading' para evitar el problema de N+1 queries.
+     * @override Polimorfismo - Especializa la carga relacional del orquestador base.
+     * @returns {Object} Configuración de Prisma Include.
+     */
+    getIncludeRelations() {
+        return { ...PRODUCT_INCLUDE, requirements: true };
+    }
+
+    /**
+     * Mapeador de Dominio (Entity to DTO).
+     * Transforma la estructura cruda de BDD en un objeto de negocio evaluable por el frontend.
+     * 
+     * @override Polimorfismo - Implementa la transformación específica de Producto.
+     * @param {Object} p - Entidad cruda de Prisma.
+     * @returns {Object} DTO con precios calculados y stock dinámico.
+     */
+    toDTO(p) {
+        return ProductService.productToDTO(p);
+    }
+
+    /**
+     * Mapper estático para reutilización en servicios adyacentes (Cart/Wishlist).
+     * RN (Cálculo de Precios): Procesa descuentos por tiempo limitado en tiempo real.
+     */
+    static productToDTO(p) {
+        if (!p) return null;
+
+        // RN - Promociones: Un descuento solo es válido si el % > 0 y no ha expirado la fecha fin.
+        const discountActive = p.descuentoPorcentaje > 0 &&
+            (!p.descuentoFechaFin || new Date(p.descuentoFechaFin) > new Date());
+        
+        const discountPercentage = discountActive ? p.descuentoPorcentaje : 0;
+        
+        // RN - Precisión Financiera: El precio final se calcula aplicando el factor de descuento.
+        const finalPrice = discountActive
+            ? Number((Number(p.precio) * (1 - p.descuentoPorcentaje / 100)).toFixed(2))
+            : Number(p.precio);
+
+        return {
+            id: p.id,
+            _id: p.id, // Compatibilidad histórica
+            name: p.nombre,
+            description: p.descripcion,
+            price: Number(p.precio),
+            finalPrice,
+            discountPercentage,
+            discountEndDate: p.descuentoFechaFin,
+            platform: p.platform ? {
+                id: p.platform.slug,
+                name: p.platform.nombre,
+                imageId: p.platform.imageId,
+                active: p.platform.activo
+            } : { id: p.platformId, name: 'Desconocido' },
+            genre: p.genre ? {
+                id: p.genre.slug,
+                name: p.genre.nombre,
+                imageId: p.genre.imageId,
+                active: p.genre.activo
+            } : { id: p.genreId, name: 'Desconocido' },
+            type: p.tipo === 'Fisico' ? 'Physical' : 'Digital',
+            releaseDate: p.fechaLanzamiento,
+            developer: p.desarrollador,
+            imageId: p.imagenUrl || 'https://placehold.co/600x400?text=No+Image',
+            trailerUrl: p.trailerUrl || '',
+            rating: Number(p.calificacion),
+            // RN - Disponibilidad Digital: Si es Digital, el stock real es el conteo de Keys disponibles en BDD.
+            stock: p.tipo === 'Digital' ? (p._count?.digitalKeys ?? p.stock) : p.stock,
+            active: p.activo,
+            specPreset: p.specPreset,
+            requirements: p.requirements
+                ? Object.fromEntries(
+                    ['minimum', 'recommended'].map(tipo => [tipo,
+                        Object.fromEntries((p.requirements.filter(r => r.tipo === tipo)).map(r => [r.key, r.value]))
+                    ])
+                )
+                : {},
+            order: p.orden
+        };
+    }
+
+    /**
+     * Consulta el catálogo aplicando filtros multidimensionales y paginación.
+     * Mantenibilidad: Desacopla los parámetros de URL hacia cláusulas WHERE de Prisma.
+     * 
+     * @param {Object} query - Criterios de filtrado { search, platform, genre, prices, etc }.
+     * @returns {Object} Data DTO y Meta información del cursor.
+     */
+    async getProducts(query = {}) {
+        const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted } = query;
+
+        const where = { activo: true };
+
+        // RN - Búsqueda: Sensible a múltiples campos (Match Parcial Insensible).
+        if (search) {
+            where.AND = where.AND || [];
+            where.AND.push({
+                OR: [
+                    { nombre: { contains: search, mode: 'insensitive' } },
+                    { descripcion: { contains: search, mode: 'insensitive' } },
+                    { desarrollador: { contains: search, mode: 'insensitive' } },
+                ]
+            });
+        }
+
+        // RN - Filtrado Taxonómico: Soporta búsqueda múltiple (OR) por Slugs.
+        if (platform) {
+            const platforms = platform.split(',').filter(Boolean);
+            if (platforms.length > 0) {
+                const platformRecords = await prisma.platform.findMany({ 
+                    where: { OR: [{ slug: { in: platforms } }, { id: { in: platforms } }] } 
+                });
+                where.platformId = { in: platformRecords.map(p => p.id) };
+            }
+        }
+
+        if (genre) {
+            const genres = genre.split(',').filter(Boolean);
+            if (genres.length > 0) {
+                const genreRecords = await prisma.genre.findMany({ 
+                    where: { OR: [{ slug: { in: genres } }, { id: { in: genres } }] } 
+                });
+                where.genreId = { in: genreRecords.map(g => g.id) };
+            }
+        }
+
+        if (minPrice || maxPrice) {
+            where.precio = {};
+            if (minPrice) where.precio.gte = Number(minPrice);
+            if (maxPrice) where.precio.lte = Number(maxPrice);
+        }
+
+        const pageNum = Math.max(1, Number(page));
+        const limitNum = Math.max(1, Number(limit));
+
+        const sortMap = {
+            'price': { precio: 'asc' },
+            '-price': { precio: 'desc' },
+            'rating': { calificacion: 'asc' },
+            '-rating': { calificacion: 'desc' },
+            'name': { nombre: 'asc' },
+            '-name': { nombre: 'desc' },
+            'order': { orden: 'asc' },
+        };
+        const orderBy = (sort && sortMap[sort]) ? sortMap[sort] : { orden: 'asc' };
+
+        const [products, count] = await Promise.all([
+            prisma.product.findMany({
+                where,
+                include: { ...PRODUCT_INCLUDE, requirements: true },
+                skip: (pageNum - 1) * limitNum,
+                take: limitNum,
+                orderBy
+            }),
+            prisma.product.count({ where })
+        ]);
+
+        return {
+            data: products.map(p => this.toDTO(p)),
+            meta: { total: count, page: pageNum, limit: limitNum, totalPages: Math.ceil(count / limitNum) }
+        };
+    }
+
+    /**
+     * Alias compatible con controladores existentes.
+     * Invoca el método base de búsqueda por ID.
+     */
+    async getProductById(id) {
+        return this.getById(id);
+    }
+
+    /**
+     * Crea un nuevo registro de producto integrando requisitos de sistema dinámicos.
+     * 
+     * @param {Object} data - Schema del producto.
+     * @returns {Object} DTO del producto creado.
+     */
+    async createProduct(data) {
+        const { name, description, price, platform: platformSlug, genre: genreSlug, type,
+            releaseDate, developer, imageId, trailerUrl, stock, active, specPreset,
+            requirements, discountPercentage, discountEndDate } = data;
+
+        // RN - Validación Cruzada: Verifica existencia de dependencias taxonómicas activas.
+        const platformRecord = await prisma.platform.findFirst({ where: { slug: platformSlug, activo: true } });
+        if (!platformRecord) throw new ErrorResponse(`Plataforma '${platformSlug}' no encontrada`, 400);
+
+        const genreRecord = await prisma.genre.findFirst({ where: { slug: genreSlug, activo: true } });
+        if (!genreRecord) throw new ErrorResponse(`Género '${genreSlug}' no encontrado`, 400);
+
+        // RN - Ordenamiento default: Los nuevos se ubican al final del stack.
+        const firstProduct = await prisma.product.findFirst({ where: { activo: true }, orderBy: { orden: 'asc' } });
+        const newOrder = firstProduct ? firstProduct.orden - 1000 : 0;
+
+        const tipo = type === 'Physical' ? 'Fisico' : 'Digital';
+
+        // Normalización de Requisitos de Hardware para persistencia relación M2M/12 Muitos.
+        const requirementsData = [];
+        if (requirements && typeof requirements === 'object') {
+            for (const [tipo_, specs] of Object.entries(requirements)) {
+                if (specs && typeof specs === 'object') {
+                    for (const [key, value] of Object.entries(specs)) {
+                        if (value != null) requirementsData.push({ tipo: tipo_, key, value: String(value) });
+                    }
+                }
+            }
+        }
+
+        const product = await prisma.product.create({
+            data: {
+                nombre: name,
+                descripcion: description,
+                precio: price,
+                platformId: platformRecord.id,
+                genreId: genreRecord.id,
+                tipo,
+                fechaLanzamiento: releaseDate ? new Date(releaseDate) : new Date(),
+                desarrollador: developer,
+                imagenUrl: imageId || 'https://placehold.co/600x400?text=No+Image',
+                trailerUrl: trailerUrl || null,
+                stock: tipo === 'Digital' ? 0 : (stock ?? 0),
+                activo: active !== undefined ? active : true,
+                specPreset: specPreset || null,
+                descuentoPorcentaje: discountPercentage ?? 0,
+                descuentoFechaFin: discountEndDate ? new Date(discountEndDate) : null,
+                orden: newOrder,
+                requirements: { create: requirementsData }
+            },
+            include: { ...PRODUCT_INCLUDE, requirements: true }
+        });
+
+        logger.info(`[ProductService] Producto creado: ${product.id}`);
+        return this.toDTO(product);
+    }
+
+    /**
+     * Actualización parcial o total de la entidad.
+     * Mantenibilidad: Implementa limpieza de relaciones previas antes de re-insertar requisitos.
+     */
+    async updateProduct(id, data) {
+        const existing = await prisma.product.findUnique({ where: { id } });
+        if (!existing) throw new ErrorResponse('Producto no encontrado', 404);
+
+        const updateData = {};
+        const fields = ['name:nombre', 'description:descripcion', 'price:precio', 'developer:desarrollador', 'imageId:imagenUrl', 'trailerUrl', 'active:activo', 'specPreset', 'discountPercentage:descuentoPorcentaje'];
+        
+        fields.forEach(field => {
+            const [src, dest] = field.split(':');
+            const target = dest || src;
+            if (data[src] !== undefined) updateData[target] = data[src];
+        });
+
+        if (data.releaseDate !== undefined) updateData.fechaLanzamiento = new Date(data.releaseDate);
+        if (data.discountEndDate !== undefined) updateData.descuentoFechaFin = data.discountEndDate ? new Date(data.discountEndDate) : null;
+        if (data.type !== undefined) updateData.tipo = data.type === 'Physical' ? 'Fisico' : 'Digital';
+
+        if (data.platform !== undefined) {
+            const p = await prisma.platform.findFirst({ where: { slug: data.platform, activo: true } });
+            if (p) updateData.platformId = p.id;
+        }
+
+        if (data.genre !== undefined) {
+            const g = await prisma.genre.findFirst({ where: { slug: data.genre, activo: true } });
+            if (g) updateData.genreId = g.id;
+        }
+
+        if (data.stock !== undefined) updateData.stock = data.stock;
+
+        // Manejo de Excepciones en Relaciones: Si vienen requisitos nuevos, borra los anteriores 
+        // para asegurar consistencia del estado.
+        if (data.requirements !== undefined) {
+            await prisma.productRequirement.deleteMany({ where: { productId: id } });
+            const reqs = [];
+            for (const [tipo_, specs] of Object.entries(data.requirements || {})) {
+                if (specs && typeof specs === 'object') {
+                    for (const [key, value] of Object.entries(specs)) {
+                        if (value != null) reqs.push({ productId: id, tipo: tipo_, key, value: String(value) });
+                    }
+                }
+            }
+            if (reqs.length > 0) {
+                await prisma.productRequirement.createMany({ data: reqs });
+            }
+        }
+
+        const updated = await prisma.product.update({
+            where: { id },
+            data: updateData,
+            include: { ...PRODUCT_INCLUDE, requirements: true }
+        });
+
+        return this.toDTO(updated);
+    }
+
+    /**
+     * Eliminación Lógica (Soft Delete).
+     * @override Polimorfismo - Redefine la destrucción física base para preservar integridad histórica.
+     */
+    async deleteProduct(id) {
+        const product = await prisma.product.findUnique({ where: { id } });
+        if (!product) throw new ErrorResponse('Producto no encontrado', 404);
+        
+        // RN - Integridad Histórica: El producto no se borra (SQL DELETE), se desactiva.
+        await prisma.product.update({ where: { id }, data: { activo: false } });
+        return true;
+    }
+
+    async deleteProducts(ids) {
+        return await prisma.product.updateMany({
+            where: { id: { in: ids } },
+            data: { activo: false }
+        });
+    }
+
+    /**
+     * Reordena la posición visual en el escaparate.
+     * Algoritmo de "Lexicographical Spacing" para insertar entre dos valores sin colisiones masivas.
+     */
+    async reorderProduct(id, newPosition) {
+        if (newPosition < 1) throw new ErrorResponse('Posición inválida', 400);
+
+        const product = await prisma.product.findUnique({ where: { id } });
+        if (!product || !product.activo) throw new ErrorResponse('Producto no encontrable o inactivo', 404);
+
+        const otherProducts = await prisma.product.findMany({
+            where: { id: { not: id }, activo: true },
+            orderBy: { orden: 'asc' }
+        });
+
+        let targetIndex = Math.min(Math.max(0, newPosition - 1), otherProducts.length);
+        const prevProduct = targetIndex > 0 ? otherProducts[targetIndex - 1] : null;
+        const nextProduct = targetIndex < otherProducts.length ? otherProducts[targetIndex] : null;
+
+        if (!prevProduct && !nextProduct) {
+            await prisma.product.update({ where: { id }, data: { orden: 1000 } });
+            return true;
+        }
+
+        let prevOrder = prevProduct ? prevProduct.orden : (nextProduct ? nextProduct.orden - 2000 : 0);
+        let nextOrder = nextProduct ? nextProduct.orden : (prevProduct ? prevProduct.orden + 2000 : 2000);
+        let newOrder = (prevOrder + nextOrder) / 2;
+
+        // Mitigación de Colisión: Si el espacio decimal se agota, recalibra todo el stack comercial.
+        if (Math.abs(newOrder - prevOrder) < 0.005) {
+            otherProducts.splice(targetIndex, 0, product);
+            await Promise.all(otherProducts.map((p, index) =>
+                prisma.product.update({ where: { id: p.id }, data: { orden: (index + 1) * 1000 } })
+            ));
+            return true;
+        }
+
+        await prisma.product.update({ where: { id }, data: { orden: newOrder } });
+        return true;
+    }
+}
+
+module.exports = new ProductService();
