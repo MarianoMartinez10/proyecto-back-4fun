@@ -236,13 +236,6 @@ model WishlistItem {
 
 // ── Reseñas ───────────────────────────────────────────────────────────────────
 
-enum Sentiment {
-  positive
-  neutral
-  negative
-  mixed
-}
-
 model Review {
   id                String     @id @default(uuid())
   userId            String
@@ -250,8 +243,6 @@ model Review {
   rating            Int
   title             String?
   text              String
-  sentiment         Sentiment?
-  sentimentScore    Decimal?   @db.Decimal(5, 4)
   verified          Boolean    @default(false)
   activo            Boolean    @default(true)
   helpfulCount      Int        @default(0)
@@ -261,17 +252,8 @@ model Review {
   user         User                @relation(fields: [userId], references: [id])
   product      Product             @relation(fields: [productId], references: [id])
   helpfulVotes ReviewHelpfulVote[]
-  keywords     ReviewKeyword[]
 
   @@unique([userId, productId])
-}
-
-// Normalización del array "sentimentKeywords" (1NF)
-model ReviewKeyword {
-  id        String @id @default(uuid())
-  reviewId  String
-  keyword   String
-  review    Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 }
 
 // Normalización del array "helpfulVoters[]" → tabla intermedia (3NF)
