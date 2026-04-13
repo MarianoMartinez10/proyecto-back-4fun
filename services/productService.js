@@ -119,9 +119,10 @@ class ProductService extends BaseService {
      * @returns {Object} Data DTO y Meta información del cursor.
      */
     async getProducts(query = {}) {
-        const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted } = query;
+        const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted, includeInactive } = query;
 
-        const where = { activo: true };
+        const includeInactiveFlag = includeInactive === true || includeInactive === 'true';
+        const where = includeInactiveFlag ? {} : { activo: true };
 
         // RN - Búsqueda: Sensible a múltiples campos (Match Parcial Insensible).
         if (search) {
@@ -160,6 +161,17 @@ class ProductService extends BaseService {
             where.precio = {};
             if (minPrice) where.precio.gte = Number(minPrice);
             if (maxPrice) where.precio.lte = Number(maxPrice);
+        }
+
+        if (discounted === true || discounted === 'true') {
+            where.AND = where.AND || [];
+            where.AND.push({ descuentoPorcentaje: { gt: 0 } });
+            where.AND.push({
+                OR: [
+                    { descuentoFechaFin: null },
+                    { descuentoFechaFin: { gt: new Date() } }
+                ]
+            });
         }
 
         const pageNum = Math.max(1, Number(page));
@@ -297,6 +309,8 @@ class ProductService extends BaseService {
         if (data.discountEndDate !== undefined) updateData.descuentoFechaFin = data.discountEndDate ? new Date(data.discountEndDate) : null;
         if (data.type !== undefined) updateData.tipo = data.type === 'Physical' ? 'Fisico' : 'Digital';
 
+        const effectiveType = updateData.tipo || existing.tipo;
+
         if (data.platform !== undefined) {
             const p = await prisma.platform.findFirst({ where: { slug: data.platform, activo: true } });
             if (p) updateData.platformId = p.id;
@@ -307,7 +321,18 @@ class ProductService extends BaseService {
             if (g) updateData.genreId = g.id;
         }
 
-        if (data.stock !== undefined) updateData.stock = data.stock;
+        if (data.stock !== undefined && effectiveType !== 'Digital') {
+            updateData.stock = Number(data.stock);
+        }
+
+        // RN - Integridad de Inventario Digital: El stock de productos digitales
+        // siempre se deriva del conteo de keys disponibles.
+        if (effectiveType === 'Digital') {
+            const digitalStock = await prisma.digitalKey.count({
+                where: { productId: id, estado: 'DISPONIBLE' }
+            });
+            updateData.stock = digitalStock;
+        }
 
         // Manejo de Excepciones en Relaciones: Si vienen requisitos nuevos, borra los anteriores 
         // para asegurar consistencia del estado.

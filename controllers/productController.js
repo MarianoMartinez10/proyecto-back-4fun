@@ -47,6 +47,36 @@ exports.getProducts = async (req, res, next) => {
 };
 
 /**
+ * Listado administrativo de catálogo.
+ * Incluye productos activos e inactivos para auditoría y gestión de deprecados.
+ */
+exports.getProductsAdmin = async (req, res, next) => {
+  try {
+    const { search, platform, genre, minPrice, maxPrice, page, limit, sort, discounted } = req.query;
+
+    const result = await ProductService.getProducts({
+      search,
+      platform,
+      genre,
+      minPrice,
+      maxPrice,
+      page,
+      limit,
+      sort,
+      discounted,
+      includeInactive: true,
+    });
+
+    res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Sirve al visitante o dashboard una radiografía de propiedades exclusivas 
  * amarradas a una Primary Key (id).
  */

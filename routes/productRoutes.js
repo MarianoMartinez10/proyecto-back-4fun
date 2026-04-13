@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getProducts,
+  getProductsAdmin,
   getProduct,
   getProductAdmin,
   createProduct,
@@ -23,6 +24,9 @@ const { protect, authorize } = require('../middlewares/auth');
 
 /** @route GET /api/products - Consulta con filtros, paginación y ordenamiento. */
 router.get('/', getProducts);
+
+/** @route GET /api/products/admin - Listado administrativo (incluye inactivos). */
+router.get('/admin', protect, authorize('admin'), getProductsAdmin);
 
 /** @route GET /api/products/admin/:id - Vista administrativa de detalle (incluye inactivos). */
 router.get('/admin/:id', protect, authorize('admin'), getProductAdmin);

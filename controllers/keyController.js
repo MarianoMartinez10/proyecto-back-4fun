@@ -29,7 +29,7 @@ exports.addKeys = async (req, res, next) => {
         // RN (Validación Estructural): Las llaves digitales solo aplican a mercadería compatible.
         const product = await prisma.product.findUnique({ where: { id: productId } });
         if (!product) throw new ErrorResponse('Producto no encontrado', 404);
-        if (product.type !== 'Digital') throw new ErrorResponse('El producto no es digital', 400);
+        if (product.tipo !== 'Digital') throw new ErrorResponse('El producto no es digital', 400);
 
         // --- Filtros de Integridad de Datos ---
         // 1. Limpia duplicaciones enviadas accidentalmente en el mismo request por el admin.
@@ -75,7 +75,7 @@ exports.addKeys = async (req, res, next) => {
             data: { stock: currentTotal }
         });
 
-        logger.info(`🔑 ${newKeysToInsert.length} keys agregadas para ${product.name}`);
+        logger.info(`🔑 ${newKeysToInsert.length} keys agregadas para ${product.nombre}`);
 
         res.status(201).json({
             success: true,
@@ -121,9 +121,11 @@ exports.deleteKey = async (req, res, next) => {
                 where: { id: productId },
                 data: { stock: count }
             });
+
+            return res.json({ success: true, message: 'Key eliminada', currentStock: count });
         }
 
-        res.json({ success: true, message: 'Key eliminada' });
+        res.json({ success: true, message: 'Key eliminada', currentStock: 0 });
     } catch (error) {
         next(error);
     }

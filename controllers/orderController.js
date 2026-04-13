@@ -23,6 +23,7 @@ exports.createOrder = async (req, res, next) => {
     res.status(201).json({
       success: true,
       order: result.order,
+      orderId: result.orderId,
       paymentLink: result.paymentLink
     });
   } catch (error) { next(error); } // Excepciones (ej: Carrito vacío) controladas centralmente.
