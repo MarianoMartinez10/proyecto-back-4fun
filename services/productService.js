@@ -1,16 +1,68 @@
+const BaseService = require('./BaseService');
 const prisma = require('../lib/prisma');
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
-// Include standard product relations
+// Relaciones estándar para incluir en consultas de Producto
 const PRODUCT_INCLUDE = {
     platform: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
     genre: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
     _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE' } } } },
 };
 
-class ProductService {
-    productToDTO(p) {
+/**
+ * ProductService — Servicio de dominio para la gestión del catálogo de productos.
+ *
+ * Hereda de BaseService, reutilizando operaciones genéricas y sobrescribiendo:
+ *   - toDTO()              → Mapeo complejo con cálculo de descuentos y stock digital.
+ *   - getIncludeRelations() → Eager loading de Platform, Genre y conteo de keys.
+ *
+ * Principios POO demostrados:
+ *   - Herencia: extiende BaseService para estructura CRUD base.
+ *   - Polimorfismo: redefine toDTO() con lógica de negocio específica (descuentos,
+ *     tipos de producto, requisitos de sistema).
+ *   - Encapsulamiento: la lógica de cálculo de precios finales está contenida
+ *     en productToDTO(), inaccesible desde fuera sin la interfaz pública.
+ */
+class ProductService extends BaseService {
+    constructor() {
+        super('product', { entityLabel: 'Producto' });
+    }
+
+    /**
+     * Relaciones a cargar en consultas de lectura.
+     * Sobrescribe BaseService.getIncludeRelations() (polimorfismo).
+     * @returns {object} Objeto include de Prisma con platform, genre y key count
+     */
+    getIncludeRelations() {
+        return { ...PRODUCT_INCLUDE, requirements: true };
+    }
+
+    /**
+     * Transforma un Product de Prisma al DTO de respuesta API.
+     * Sobrescribe BaseService.toDTO() (polimorfismo).
+     *
+     * Incluye lógica de negocio específica:
+     *   - Cálculo de precio final con descuento activo
+     *   - Resolución de stock según tipo (Digital → keys disponibles)
+     *   - Normalización de requisitos de sistema (3NF → objeto anidado)
+     *
+     * @param {object} p - Entidad Product de Prisma (con relaciones incluidas)
+     * @returns {object} DTO completo del producto para la API
+     */
+    toDTO(p) {
+        return ProductService.productToDTO(p);
+    }
+
+    /**
+     * Versión estática del mapper, utilizada por otros servicios
+     * (CartService, WishlistService) que necesitan transformar productos
+     * sin instanciar ProductService.
+     * @param {object} p - Entidad Product de Prisma
+     * @returns {object|null} DTO del producto o null si la entidad es nula
+     * @static
+     */
+    static productToDTO(p) {
         if (!p) return null;
         const discountActive = p.descuentoPorcentaje > 0 &&
             (!p.descuentoFechaFin || new Date(p.descuentoFechaFin) > new Date());
@@ -60,6 +112,10 @@ class ProductService {
         };
     }
 
+    /**
+     * Obtiene productos con filtrado, paginación y ordenamiento.
+     * Extiende la funcionalidad base con lógica de búsqueda avanzada.
+     */
     async getProducts(query = {}) {
         const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted } = query;
 
@@ -143,18 +199,17 @@ class ProductService {
         ]);
 
         return {
-            data: products.map(p => this.productToDTO(p)),
+            data: products.map(p => this.toDTO(p)),
             meta: { total: count, page: pageNum, limit: limitNum, totalPages: Math.ceil(count / limitNum) }
         };
     }
 
+    /**
+     * Alias compatible con controladores existentes.
+     * Delega al método heredado getById() de BaseService.
+     */
     async getProductById(id) {
-        const product = await prisma.product.findUnique({
-            where: { id },
-            include: { ...PRODUCT_INCLUDE, requirements: true }
-        });
-        if (!product) throw new ErrorResponse('Producto no encontrado', 404);
-        return this.productToDTO(product);
+        return this.getById(id);
     }
 
     async createProduct(data) {
@@ -208,8 +263,8 @@ class ProductService {
             include: { ...PRODUCT_INCLUDE, requirements: true }
         });
 
-        logger.info(`Producto creado: ${product.id}`, { nombre: product.nombre });
-        return this.productToDTO(product);
+        logger.info(`[ProductService] Producto creado: ${product.id}`, { nombre: product.nombre });
+        return this.toDTO(product);
     }
 
     async updateProduct(id, data) {
@@ -274,9 +329,14 @@ class ProductService {
             include: { ...PRODUCT_INCLUDE, requirements: true }
         });
 
-        return this.productToDTO(updated);
+        return this.toDTO(updated);
     }
 
+    /**
+     * Soft-delete de un producto (marca como inactivo).
+     * Sobrescribe el deleteById() heredado de BaseService porque
+     * los productos usan eliminación lógica, no física (polimorfismo).
+     */
     async deleteProduct(id) {
         const product = await prisma.product.findUnique({ where: { id } });
         if (!product) throw new ErrorResponse('Producto no encontrado', 404);

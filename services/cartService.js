@@ -1,5 +1,6 @@
 const prisma = require('../lib/prisma');
-const ProductService = require('./productService');
+const productServiceInstance = require('./productService');
+const ProductService = productServiceInstance.constructor; // Accede a la Clase para métodos estáticos
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
