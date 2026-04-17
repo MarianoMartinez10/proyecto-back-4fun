@@ -53,7 +53,10 @@ class EmailService {
         pool: true,
         maxConnections: 3,
         socketTimeout: 30000,
-        tls: { rejectUnauthorized: true },
+        tls: { 
+          rejectUnauthorized: true,
+          servername: 'smtp.gmail.com' // Fuerza la validación contra el dominio oficial
+        },
         auth: { user: email, pass: password }
       });
 
@@ -131,7 +134,17 @@ class EmailService {
       html
     });
   }
-  async sendContactNotification({ fullName, email, message }) { /* HTML Omitido */ return this.sendEmail({ to: email, subject: 'Contacto', html: message }); }
+  async sendContactNotification({ fullName, email, message }) {
+    const html = `
+      <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h2 style="color: #d658fa;">Nueva Consulta desde la Web</h2>
+        <p><strong>De:</strong> ${fullName} (${email})</p>
+        <p><strong>Mensaje:</strong></p>
+        <div style="background: #f9f9f9; padding: 15px; border-radius: 5px;">${message}</div>
+      </div>
+    `;
+    return this.sendEmail({ to: this._fromEmail, subject: `Consulta Web: ${fullName}`, html });
+  }
   async sendPasswordResetEmail({ name, email, resetUrl }) { /* HTML Omitido */ return this.sendEmail({ to: email, subject: 'Reset', html: resetUrl }); }
 }
 
