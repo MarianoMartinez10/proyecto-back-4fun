@@ -203,25 +203,40 @@ class EmailService {
     const customerName = user?.name || 'Cliente';
     const orderId = order?._id || order?.id || 'N/A';
     const keysList = Array.isArray(keys)
-      ? keys.map((k, index) => `<li style="margin-bottom:8px;"><strong>Key ${index + 1}:</strong> ${k.clave}</li>`).join('')
-      : '';
+      ? keys.map((k, index) => `
+        <div style="background-color: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; margin-bottom: 15px; border-left: 4px solid #d658fa; text-align: left; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
+          <span style="font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 5px;">Licencia / Key ${index + 1}</span>
+          <span style="font-family: monospace; font-size: 15px; font-weight: bold; color: #ffffff; letter-spacing: 2px;">${k.clave}</span>
+        </div>
+      `).join('')
+      : '<p style="color: rgba(255,255,255,0.5);">No se encontraron licencias en esta orden.</p>';
 
-    const html = `
-      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;max-width:640px;margin:0 auto;">
-        <h2 style="margin:0 0 12px;">Tu compra fue acreditada</h2>
-        <p>Hola ${customerName},</p>
-        <p>Confirmamos el pago de tu orden <strong>#${orderId}</strong>. Estas son tus claves digitales:</p>
-        <ul style="padding-left:20px;">${keysList}</ul>
-        <p>Guarda este correo en un lugar seguro para futuras consultas.</p>
-        <hr style="border:none;border-top:1px solid #ddd;margin:18px 0;" />
-        <p style="font-size:12px;color:#555;">4Fun Store - Entrega automatica de licencias digitales</p>
+    const content = `
+      <div style="text-align: center; margin-bottom: 30px;">
+        <span style="background-color: rgba(34, 197, 94, 0.1); color: #4ade80; padding: 5px 15px; border-radius: 20px; font-size: 10px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase;">
+          Compra Acreditada
+        </span>
+      </div>
+      <h1 style="font-size: 32px; margin: 0; color: #ffffff; letter-spacing: -1px; font-weight: 900; line-height: 1.2;">¡Tus juegos <br/>están listos!</h1>
+      <p style="font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.8); margin-top: 25px;">
+        Hola <strong>${customerName}</strong>, confirmamos el pago de tu orden <span style="color: #d658fa;">#${orderId}</span>. Acá tenés tus claves digitales:
+      </p>
+      
+      <div style="margin-top: 35px; margin-bottom: 35px;">
+        ${keysList}
+      </div>
+
+      <div style="background-color: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; text-align: center;">
+        <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.6); line-height: 1.5;">
+          Guardá este correo en un lugar seguro para futuras consultas. Copiá y pegá la licencia en la plataforma correspondiente para empezar a jugar.
+        </p>
       </div>
     `;
 
     return this.sendEmail({
       to: user.email,
-      subject: `Tus keys digitales - Orden #${orderId}`,
-      html
+      subject: `Tus keys digitales de 4Fun - Orden #${orderId}`,
+      html: this._getHtmlTemplate(content)
     });
   }
   async sendContactNotification({ fullName, email, message }) {
