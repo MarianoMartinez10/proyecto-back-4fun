@@ -53,7 +53,7 @@ class EmailService {
         pool: true,
         maxConnections: 3,
         socketTimeout: 30000,
-        tls: { 
+        tls: {
           rejectUnauthorized: true,
           servername: 'smtp.gmail.com' // Fuerza la validación contra el dominio oficial
         },
@@ -83,10 +83,10 @@ class EmailService {
     if (!transporter) return { success: false, message: 'Servicio offline' };
 
     const mailOptions = {
-        from: `${this._fromName} <${this._fromEmail}>`,
-        to, subject, html, text: this._htmlToText(html),
-        // Mantenibilidad (Reputación de Dominio): Inyecta cabeceras RFC para esquivar Spam Folders
-        headers: { 'List-Unsubscribe': `<mailto:${this._fromEmail}?subject=unsubscribe>` }
+      from: `${this._fromName} <${this._fromEmail}>`,
+      to, subject, html, text: this._htmlToText(html),
+      // Mantenibilidad (Reputación de Dominio): Inyecta cabeceras RFC para esquivar Spam Folders
+      headers: { 'List-Unsubscribe': `<mailto:${this._fromEmail}?subject=unsubscribe>` }
     };
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -108,7 +108,97 @@ class EmailService {
   }
 
   // Métodos de ensamblaje de plantillas
-  async sendWelcomeEmail({ name, email, verificationToken }) { /* HTML Omitido por Brevedad Logica */ return this.sendEmail({ to: email, subject: 'Bienvenido', html: `Token: ${verificationToken}` }); }
+  // ─── PLANTILLAS PREMIUM (UI/UX) ───
+  _getHtmlTemplate(content, buttonText, buttonUrl) {
+    const primaryColor = '#d658fa';
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          .btn:hover { background-color: #c040e0 !important; transform: scale(1.02); }
+        </style>
+      </head>
+      <body style="margin: 0; padding: 0; background-color: #030303; font-family: 'Segoe UI', Arial, sans-serif; color: #ffffff;">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #030303; padding: 40px 20px;">
+          <tr>
+            <td align="center">
+              <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #0a0a0a; border-radius: 24px; overflow: hidden; border: 1px solid rgba(214, 88, 250, 0.2); box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+                <!-- Header (Logo) -->
+                <tr>
+                  <td align="center" style="padding: 40px 0 20px 0;">
+                    <img src="https://4funstore-vercel.vercel.app/logo.png" alt="4Fun Logo" width="80" style="display: block; border-radius: 20px; box-shadow: 0 0 20px rgba(214, 88, 250, 0.3);">
+                  </td>
+                </tr>
+                <!-- Content -->
+                <tr>
+                  <td style="padding: 0 50px 40px 50px; text-align: center;">
+                    ${content}
+                    
+                    ${buttonText ? `
+                      <div style="margin-top: 35px;">
+                        <a href="${buttonUrl}" class="btn" style="display: inline-block; background-color: #111111; color: ${primaryColor}; border: 2px solid ${primaryColor}; padding: 18px 45px; border-radius: 16px; text-decoration: none; font-weight: 900; text-transform: uppercase; font-size: 13px; letter-spacing: 2px; transition: all 0.3s ease; box-shadow: 0 10px 30px rgba(214, 88, 250, 0.15);">
+                          ${buttonText}
+                        </a>
+                      </div>
+                    ` : ''}
+                  </td>
+                </tr>
+                <!-- Footer -->
+                <tr>
+                  <td style="padding: 30px; background-color: rgba(255,255,255,0.02); text-align: center; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <p style="margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.3); font-weight: bold;">
+                      4Fun Store &copy; 2026 - Tu Tienda de Gaming Digital
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin-top: 25px; font-size: 10px; color: rgba(255,255,255,0.1); text-align: center; max-width: 400px; line-height: 1.6;">
+                Este mensaje fue enviado automáticamente. Si no realizaste esta acción, por favor ignora este correo o contacta a soporte.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+  }
+
+  async sendWelcomeEmail({ name, email, verificationToken }) {
+    const frontendUrl = process.env.FRONTEND_URL || 'https://4funstore-vercel.vercel.app';
+    const verifyUrl = `${frontendUrl}/verify?token=${verificationToken}`;
+    
+    const content = `
+      <div style="text-align: center; margin-bottom: 30px;">
+        <span style="background-color: rgba(214, 88, 250, 0.1); color: #d658fa; padding: 5px 15px; border-radius: 20px; font-size: 10px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase;">
+          Nivel 1 Desbloqueado
+        </span>
+      </div>
+      <h1 style="font-size: 32px; margin: 0; color: #ffffff; letter-spacing: -1.5px; font-weight: 900; line-height: 1;">¡Tu aventura <br/>comienza ahora!</h1>
+      <p style="font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.8); margin-top: 25px;">
+        Hola <strong>${name}</strong>, bienvenido/a al ecosistema 4Fun. Ya sos parte de la comunidad gaming más grande de la región.
+      </p>
+      
+      <div style="background-color: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; margin-top: 30px; text-align: left;">
+        <p style="margin: 0 0 10px 0; font-size: 12px; color: #d658fa; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">Con tu cuenta podés:</p>
+        <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.5;">
+          • Comprar juegos digitales al mejor precio del mercado.<br/>
+          • Vender tus propias keys y ganar dinero real.<br/>
+          • Acceder a soporte técnico personalizado 24/7.
+        </div>
+      </div>
+
+      <p style="font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.5); margin-top: 30px;">
+        Solo un paso más: verificá tu correo para activar todas las funciones de tu perfil.
+      </p>
+    `;
+
+    return this.sendEmail({ 
+      to: email, 
+      subject: '¡Bienvenido/a a 4Fun Store!', 
+      html: this._getHtmlTemplate(content, 'Activar mi Cuenta', verifyUrl) 
+    });
+  }
   async sendDigitalProductDelivery(user, order, keys) {
     const customerName = user?.name || 'Cliente';
     const orderId = order?._id || order?.id || 'N/A';
@@ -145,7 +235,23 @@ class EmailService {
     `;
     return this.sendEmail({ to: this._fromEmail, subject: `Consulta Web: ${fullName}`, html });
   }
-  async sendPasswordResetEmail({ name, email, resetUrl }) { /* HTML Omitido */ return this.sendEmail({ to: email, subject: 'Reset', html: resetUrl }); }
+  async sendPasswordResetEmail({ name, email, resetUrl }) {
+    const content = `
+      <h1 style="font-size: 28px; margin: 0; color: #ffffff; letter-spacing: -1px;">¿Olvidaste tu clave?</h1>
+      <p style="font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.7); margin-top: 20px;">
+        Hola ${name}, recibimos una solicitud para restablecer la contraseña de tu cuenta en 4Fun.
+      </p>
+      <p style="font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.5); margin-top: 10px;">
+        Si no realizaste este pedido, simplemente ignora este correo. Tu cuenta sigue segura.
+      </p>
+    `;
+
+    return this.sendEmail({ 
+      to: email, 
+      subject: 'Restablecer contraseña - 4Fun Store', 
+      html: this._getHtmlTemplate(content, 'Cambiar Contraseña', resetUrl) 
+    });
+  }
 }
 
 module.exports = new EmailService();
