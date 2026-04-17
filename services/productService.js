@@ -36,7 +36,15 @@ class ProductService extends BaseService {
      * @returns {Object} Configuración de Prisma Include.
      */
     getIncludeRelations() {
-        return { ...PRODUCT_INCLUDE, requirements: true };
+        return { 
+            ...PRODUCT_INCLUDE, 
+            requirements: true, 
+            seller: { 
+                include: { 
+                    sellerProfile: true 
+                } 
+            } 
+        };
     }
 
     /**
@@ -109,7 +117,13 @@ class ProductService extends BaseService {
                     ])
                 )
                 : {},
-            order: p.orden
+            order: p.orden,
+            // RN (3FN): Exponemos datos básicos del vendedor para el catálogo.
+            seller: p.seller ? {
+                id: p.seller.id,
+                name: p.seller.name,
+                storeName: p.seller.sellerProfile?.storeName || 'Tienda Oficial'
+            } : null
         };
     }
 
@@ -121,7 +135,7 @@ class ProductService extends BaseService {
      * @returns {Object} Data DTO y Meta información del cursor.
      */
     async getProducts(query = {}) {
-        const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted, includeInactive } = query;
+        const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted, includeInactive, sellerId } = query;
 
         const includeInactiveFlag = includeInactive === true || includeInactive === 'true';
         const where = includeInactiveFlag ? {} : { activo: true };
@@ -136,6 +150,11 @@ class ProductService extends BaseService {
                     { desarrollador: { contains: search, mode: 'insensitive' } },
                 ]
             });
+        }
+
+        // RN (Seguridad y Multi-vendedor): Si hay sellerId, restringimos los resultados.
+        if (sellerId) {
+            where.sellerId = sellerId;
         }
 
         // RN - Filtrado Taxonómico: Soporta búsqueda múltiple (OR) por Slugs.
@@ -193,7 +212,7 @@ class ProductService extends BaseService {
         const [products, count] = await Promise.all([
             prisma.product.findMany({
                 where,
-                include: { ...PRODUCT_INCLUDE, requirements: true },
+                include: { ...PRODUCT_INCLUDE, requirements: true, seller: { include: { sellerProfile: true } } },
                 skip: (pageNum - 1) * limitNum,
                 take: limitNum,
                 orderBy
@@ -236,7 +255,7 @@ class ProductService extends BaseService {
     async createProduct(data) {
         const { name, description, price, platform: platformSlug, genre: genreSlug, platformId, genreId, type,
             releaseDate, developer, imageId, trailerUrl, stock, active, specPreset,
-            requirements, discountPercentage, discountEndDate } = data;
+            requirements, discountPercentage, discountEndDate, sellerId } = data;
 
         // RN - Validación Cruzada: Verifica existencia de dependencias taxonómicas activas.
         let platformRecord = null;
@@ -293,9 +312,10 @@ class ProductService extends BaseService {
                 descuentoPorcentaje: discountPercentage ?? 0,
                 descuentoFechaFin: discountEndDate ? new Date(discountEndDate) : null,
                 orden: newOrder,
+                sellerId, // Vinculación mandatoria (3FN)
                 requirements: { create: requirementsData }
             },
-            include: { ...PRODUCT_INCLUDE, requirements: true }
+            include: { ...PRODUCT_INCLUDE, requirements: true, seller: { include: { sellerProfile: true } } }
         });
 
         logger.info(`[ProductService] Producto creado: ${product.id}`);
@@ -398,6 +418,52 @@ class ProductService extends BaseService {
             where: { id: { in: ids } },
             data: { activo: false }
         });
+    }
+
+    /**
+     * Valida que un usuario (seller o admin) tenga permisos para eliminar un conjunto de productos.
+     * 
+     * RN (Seguridad): 
+     * - Admin: Puede eliminar cualquier producto
+     * - Seller: Solo puede eliminar sus propios productos
+     * 
+     * @param {string[]} ids - Array de IDs de productos
+     * @param {string} userId - ID del usuario autenticado
+     * @param {string} userRole - Rol del usuario ('admin', 'seller')
+     * @returns {Object} { valid: boolean, unauthorizedIds?: string[] }
+     */
+    async validateProductOwnershipBulk(ids, userId, userRole) {
+        if (!ids || ids.length === 0) {
+            return { valid: true };
+        }
+
+        // Fast-path: Admin tiene acceso global
+        if (userRole === 'admin') {
+            return { valid: true };
+        }
+
+        // Sellers: Valida que todos los productos sean suyos
+        const unauthorizedIds = [];
+        const products = await prisma.product.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, sellerId: true }
+        });
+
+        for (const product of products) {
+            if (product.sellerId !== userId) {
+                unauthorizedIds.push(product.id);
+            }
+        }
+
+        if (unauthorizedIds.length > 0) {
+            return { 
+                valid: false, 
+                unauthorizedIds,
+                message: `No tienes permisos para eliminar los productos: ${unauthorizedIds.join(', ')}`
+            };
+        }
+
+        return { valid: true };
     }
 
     /**

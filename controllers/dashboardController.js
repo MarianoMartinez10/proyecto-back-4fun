@@ -17,10 +17,11 @@ const DashboardService = require('../services/dashboardService');
  */
 exports.getStats = async (req, res, next) => {
   try {
-    const data = await DashboardService.getStats();
+    // RN (RBAC): Si es vendedor, filtramos por su ID. Si es Admin, vemos todo.
+    const sellerId = req.user.role === 'seller' ? req.user.id : null;
+    const data = await DashboardService.getStats(sellerId);
     res.json({ success: true, data });
   } catch (error) {
-    // Si la lectura macro se corrompe por timeouts en base de datos, delega la traza.
     next(error);
   }
 };
@@ -31,7 +32,8 @@ exports.getStats = async (req, res, next) => {
  */
 exports.getSalesChart = async (req, res, next) => {
   try {
-    const data = await DashboardService.getSalesChart();
+    const sellerId = req.user.role === 'seller' ? req.user.id : null;
+    const data = await DashboardService.getSalesChart(sellerId);
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -44,7 +46,8 @@ exports.getSalesChart = async (req, res, next) => {
  */
 exports.getTopProducts = async (req, res, next) => {
   try {
-    const data = await DashboardService.getTopProducts();
+    const sellerId = req.user.role === 'seller' ? req.user.id : null;
+    const data = await DashboardService.getTopProducts(sellerId);
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -56,7 +59,8 @@ exports.getTopProducts = async (req, res, next) => {
  */
 exports.getRecentSales = async (req, res, next) => {
   try {
-    const data = await DashboardService.getRecentSales();
+    const sellerId = req.user.role === 'seller' ? req.user.id : null;
+    const data = await DashboardService.getRecentSales(sellerId);
     res.json({ success: true, data });
   } catch (error) {
     next(error);

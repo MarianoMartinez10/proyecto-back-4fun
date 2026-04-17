@@ -77,6 +77,32 @@ exports.getProductsAdmin = async (req, res, next) => {
 };
 
 /**
+ * Listado específico para el vendedor activo.
+ * Filtra el catálogo para mostrar solo los ítems donde el usuario es dueño.
+ */
+exports.getSellerProducts = async (req, res, next) => {
+  try {
+    const { search, page, limit, sort } = req.query;
+
+    const result = await ProductService.getProducts({
+      search,
+      page,
+      limit,
+      sort,
+      sellerId: req.user.id, // Filtro de seguridad: Solo lo mío
+      includeInactive: true, // El vendedor debe poder gestionar sus desactivados
+    });
+
+    res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Sirve al visitante o dashboard una radiografía de propiedades exclusivas 
  * amarradas a una Primary Key (id).
  */
@@ -110,7 +136,11 @@ exports.getProductAdmin = async (req, res, next) => {
  */
 exports.createProduct = async (req, res, next) => {
   try {
-    const product = await ProductService.createProduct(req.body);
+    // RN (Autoría): Vinculamos el producto al usuario que realiza la petición.
+    const product = await ProductService.createProduct({
+      ...req.body,
+      sellerId: req.user.id
+    });
     res.status(201).json({ success: true, data: product });
   } catch (error) {
     next(error); // ErrorHandler procesa Prisma Constraints (Ej. Nombre comercial duplicado).
@@ -119,11 +149,15 @@ exports.createProduct = async (req, res, next) => {
 
 /**
  * Destruye estado obsoleto para reemplazar por el fragmento HTTP provisto (PUT completo).
+ * Nota: La validación de propiedad se realiza en `verifyProductOwnership` middleware.
  */
 exports.updateProduct = async (req, res, next) => {
   try {
-    const product = await ProductService.updateProduct(req.params.id, req.body);
-    res.status(200).json({ success: true, data: product });
+    const { id } = req.params;
+    const productData = req.body;
+
+    const updatedProduct = await ProductService.updateProduct(id, productData);
+    res.status(200).json({ success: true, data: updatedProduct });
   } catch (error) {
     next(error);
   }
@@ -157,10 +191,12 @@ exports.reorderProduct = async (req, res, next) => {
 
 /**
  * Limpieza Singular Logística. Evita mostrar productos desfazados de mercado.
+ * Nota: La validación de propiedad se realiza en `verifyProductOwnership` middleware.
  */
 exports.deleteProduct = async (req, res, next) => {
   try {
-    await ProductService.deleteProduct(req.params.id);
+    const { id } = req.params;
+    await ProductService.deleteProduct(id);
     res.status(200).json({ success: true, message: 'Producto eliminado' });
   } catch (error) {
     next(error);
@@ -177,6 +213,21 @@ exports.deleteProducts = async (req, res, next) => {
     // Validación preventiva arquitectónica para abortar sentencias SQL vacías inútiles.
     if (!ids || ids.length === 0) {
       throw new ErrorResponse('No se proporcionaron IDs para eliminar', 400);
+    }
+
+    // RN - Seguridad Marketplace: Validar que sellers solo eliminen sus productos
+    const validation = await ProductService.validateProductOwnershipBulk(
+      ids, 
+      req.user.id, 
+      req.user.role
+    );
+
+    if (!validation.valid) {
+      return res.status(403).json({ 
+        success: false, 
+        message: validation.message,
+        unauthorizedIds: validation.unauthorizedIds
+      });
     }
 
     const result = await ProductService.deleteProducts(ids);
