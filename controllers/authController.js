@@ -26,7 +26,13 @@ const toUserDTO = (user) => ({
     phone: user.phone || null,
     address: user.address || null,
     isVerified: user.isVerified,
-    createdAt: user.createdAt
+    createdAt: user.createdAt,
+    // RN (3FN): Incluir datos de vendedor si existen
+    sellerProfile: user.sellerProfile ? {
+        storeName: user.sellerProfile.storeName,
+        isApproved: user.sellerProfile.isApproved,
+        storeDescription: user.sellerProfile.storeDescription
+    } : null
 });
 
 /**
@@ -249,4 +255,21 @@ exports.resetPassword = async (req, res, next) => {
         await AuthService.resetPassword(token, password);
         res.status(200).json({ success: true, message: 'Contraseña restablecida.' });
     } catch (error) { next(error); }
+};
+
+/**
+ * RN (Marketplace): Procesa la solicitud para subir de rango a Vendedor.
+ */
+exports.becomeSeller = async (req, res, next) => {
+    try {
+        const user = await AuthService.convertToSeller(req.user.id, req.body);
+        
+        res.status(200).json({
+            success: true,
+            message: '¡Felicitaciones! Ahora sos vendedor. Tu tienda está pendiente de aprobación.',
+            user: toUserDTO(user)
+        });
+    } catch (error) {
+        next(error);
+    }
 };

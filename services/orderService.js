@@ -106,25 +106,41 @@ class OrderService {
         };
     }
 
-    async getUserOrders(userId) {
-        const orders = await prisma.order.findMany({
-            where: { userId },
-            orderBy: { createdAt: 'desc' },
-            include: { orderItems: { include: { product: true } }, shippingAddress: true, digitalKeys: { select: { id: true, clave: true, productId: true } } }
-        });
+    async getUserOrders(userId, { page = 1, limit = 5 } = {}) {
+        const pageNum = Math.max(1, Number(page));
+        const limitNum = Math.max(1, Number(limit));
 
-        // Mapeo defensivo de compatibilidad Mongoose->Prisma en fron-end usando _id
-        return orders.map(o => ({
-            ...o,
-            _id: o.id,
-            orderItems: (o.orderItems || []).map(i => ({ 
-                ...i, 
-                _id: i.id, 
-                price: Number(i.unitPriceAtPurchase), 
-                name: i.product?.nombre || 'Producto Desconocido', 
-                image: i.product?.imagenUrl || DEFAULT_IMAGE 
+        const [orders, total] = await Promise.all([
+            prisma.order.findMany({
+                where: { userId },
+                orderBy: { createdAt: 'desc' },
+                include: { 
+                    orderItems: { include: { product: true } }, 
+                    shippingAddress: true, 
+                    digitalKeys: { select: { id: true, clave: true, productId: true } } 
+                },
+                skip: (pageNum - 1) * limitNum,
+                take: limitNum
+            }),
+            prisma.order.count({ where: { userId } })
+        ]);
+
+        return {
+            total,
+            page: pageNum,
+            totalPages: Math.ceil(total / limitNum),
+            orders: orders.map(o => ({
+                ...o,
+                _id: o.id,
+                orderItems: (o.orderItems || []).map(i => ({ 
+                    ...i, 
+                    _id: i.id, 
+                    price: Number(i.unitPriceAtPurchase), 
+                    name: i.product?.nombre || 'Producto Desconocido', 
+                    image: i.product?.imagenUrl || DEFAULT_IMAGE 
+                }))
             }))
-        }));
+        };
     }
 
     async getOrderById(orderId, userId, userRole) {
@@ -290,6 +306,26 @@ class OrderService {
                     digitalKeys: { select: { id: true, clave: true, productId: true } }
                 }
             });
+
+            // RN (Sistema de Escrow): Cuando la orden se paga, crear transacción en PENDING_APPROVAL
+            // El dinero queda retenido hasta que Admin lo apruebe
+            if (paidOrder && paidOrder.orderItems?.length > 0) {
+                const firstItem = paidOrder.orderItems[0];
+                const sellerId = firstItem.product?.sellerId;
+
+                if (sellerId) {
+                    await tx.transaction.create({
+                        data: {
+                            orderId: paidOrder.id,
+                            sellerId,
+                            amount: paidOrder.totalPrice,
+                            status: 'PENDING_APPROVAL'
+                        }
+                    });
+
+                    logger.info(`[OrderService] Transacción de escrow creada para orden ${paidOrder.id} - Vendedor: ${sellerId} - Monto: $${paidOrder.totalPrice} - Status: PENDING_APPROVAL`);
+                }
+            }
 
             return { paidOrder, assignedKeysCount };
         });

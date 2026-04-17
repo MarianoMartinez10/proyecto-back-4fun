@@ -39,8 +39,17 @@ exports.createOrder = async (req, res, next) => {
 exports.getUserOrders = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const enrichedOrders = await OrderService.getUserOrders(userId);
-    res.json({ success: true, count: enrichedOrders.length, orders: enrichedOrders });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 5;
+    
+    const result = await OrderService.getUserOrders(userId, { page, limit });
+    res.json({ 
+      success: true, 
+      total: result.total,
+      page: result.page,
+      totalPages: result.totalPages,
+      orders: result.orders 
+    });
   } catch (error) { next(error); }
 };
 

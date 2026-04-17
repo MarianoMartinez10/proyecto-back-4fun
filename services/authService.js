@@ -245,6 +245,49 @@ class AuthService {
         updated.getSignedJwtToken = () => signToken(updated.id);
         return updated;
     }
+
+    /**
+     * RN (Marketplace): Transforma un comprador en vendedor.
+     * Crea un perfil de tienda (3FN) y actualiza el rol del usuario.
+     * 
+     * @param {string} userId - UUID del usuario solicitante.
+     * @param {Object} sellerData - Información de la tienda.
+     */
+    async convertToSeller(userId, sellerData) {
+        const { storeName, storeDescription, bankAccount, taxId } = sellerData;
+
+        // Validaciones de Negocio: Nombre de tienda es obligatorio y debe ser único.
+        if (!storeName) throw new ErrorResponse('El nombre de la tienda es requerido', 400);
+
+        const storeExists = await prisma.sellerProfile.findUnique({ where: { storeName } });
+        if (storeExists) throw new ErrorResponse('El nombre de la tienda ya está en uso', 400);
+
+        // RN: Si el usuario es ADMIN, no debe perder su rango ni requerir aprobación.
+        const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+        const shouldBeApproved = currentUser.role === 'admin';
+        const finalRole = currentUser.role === 'admin' ? 'admin' : 'seller';
+
+        // Operación Atómica (3FN): Actualiza rol y crea perfil en una sola transacción.
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: {
+                role: finalRole,
+                sellerProfile: {
+                    create: {
+                        storeName,
+                        storeDescription,
+                        bankAccount,
+                        taxId,
+                        isApproved: shouldBeApproved
+                    }
+                }
+            },
+            include: { sellerProfile: true }
+        });
+
+        logger.info(`[AuthService] Usuario convertido a vendedor: ${userId} (${storeName})`);
+        return user;
+    }
 }
 
 module.exports = new AuthService();

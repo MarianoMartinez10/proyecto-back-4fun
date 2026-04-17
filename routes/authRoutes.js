@@ -10,7 +10,8 @@ const {
     verifyEmail,
     resendVerification,
     forgotPassword,
-    resetPassword
+    resetPassword,
+    becomeSeller
 } = require('../controllers/authController');
 const { protect } = require('../middlewares/auth');
 const { registerValidation, loginValidation } = require('../middlewares/authValidator');
@@ -56,6 +57,9 @@ router.put('/profile', protect, updateProfile);
 
 /** @route PUT /api/auth/password - Rotación de credenciales de seguridad. */
 router.put('/password', protect, changePassword);
+
+/** @route POST /api/auth/become-seller - Transforma un comprador en vendedor creando su perfil de tienda. */
+router.post('/become-seller', protect, becomeSeller);
 
 /** @route POST /api/auth/logout - Destrucción de sesión y limpieza de Cookies. */
 router.post('/logout', logout);

@@ -38,7 +38,8 @@ class UserService extends BaseService {
             address: true,
             role: true,
             isVerified: true,
-            createdAt: true
+            createdAt: true,
+            sellerProfile: true // Inyectamos el perfil de vendedor si existe
         };
     }
 
@@ -53,7 +54,7 @@ class UserService extends BaseService {
     toDTO(user) {
         return {
             id: user.id,
-            _id: user.id, // Compatibilidad histórica con interfaces previas
+            _id: user.id,
             name: user.name,
             email: user.email,
             avatar: user.avatar || null,
@@ -61,7 +62,13 @@ class UserService extends BaseService {
             address: user.address || null,
             role: user.role,
             isVerified: user.isVerified,
-            createdAt: user.createdAt
+            createdAt: user.createdAt,
+            // 3FN - Datos de vendedor encapsulados
+            sellerProfile: user.sellerProfile ? {
+                storeName: user.sellerProfile.storeName,
+                isApproved: user.sellerProfile.isApproved,
+                storeDescription: user.sellerProfile.storeDescription
+            } : null
         };
     }
 
@@ -90,15 +97,18 @@ class UserService extends BaseService {
      * @returns {Promise<Object>} Perfil actualizado transformado a DTO.
      */
     async updateUser(id, data) {
-        const { name, email, phone, address, role, isVerified } = data;
+        const { name, email, phone, address, role, isVerified, isApproved } = data;
 
         // RN - Seguridad / RBAC: Restringe la mutación de rol a valores válidos del dominio.
-        if (role !== undefined && !['user', 'admin'].includes(role)) {
-            throw new ErrorResponse('Rol inválido. Valores permitidos: user o admin.', 400);
+        if (role !== undefined && !['buyer', 'seller', 'admin'].includes(role)) {
+            throw new ErrorResponse('Rol inválido. Valores permitidos: buyer, seller o admin.', 400);
         }
         
         // Manejo de Excepciones: Verifica existencia antes de intentar la mutación.
-        const existing = await this.model.findUnique({ where: { id } });
+        const existing = await this.model.findUnique({ 
+            where: { id },
+            include: { sellerProfile: true }
+        });
         if (!existing) throw new ErrorResponse('Usuario inexistente', 404);
 
         const updated = await this.model.update({
@@ -110,6 +120,25 @@ class UserService extends BaseService {
                 ...(address !== undefined && { address }),
                 ...(role !== undefined && { role }),
                 ...(isVerified !== undefined && { isVerified }),
+                // RN - Modelo Simplificado (Mercado Libre): El rol 'seller' implica aprobación.
+                // Si se activa el rol seller o isApproved es true, aseguramos que exista el perfil.
+                ...((role === 'seller' || isApproved === true) ? {
+                    sellerProfile: {
+                        upsert: {
+                            create: { 
+                                storeName: name || existing.name,
+                                isApproved: true 
+                            },
+                            update: { 
+                                isApproved: true 
+                            }
+                        }
+                    }
+                } : (isApproved !== undefined && existing.sellerProfile) ? {
+                    sellerProfile: {
+                        update: { isApproved }
+                    }
+                } : {})
             },
             select: this.getSelectFields()
         });

@@ -7,6 +7,8 @@ const corsOptions = {
 
         const allowedOrigins = [
             'http://localhost:3000',
+            'http://localhost:9002',
+            'http://localhost:9003',
             'https://4funstore-vercel.vercel.app',
             process.env.FRONTEND_URL
         ].filter(Boolean);

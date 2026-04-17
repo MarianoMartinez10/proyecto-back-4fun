@@ -32,7 +32,7 @@ exports.getUsers = async (req, res, next) => {
       ];
     }
 
-    if (role && ['user', 'admin'].includes(role)) {
+    if (role && ['buyer', 'seller', 'admin'].includes(role)) {
       where.role = role;
     }
 
@@ -117,14 +117,14 @@ exports.getUserById = async (req, res, next) => {
  */
 exports.updateUser = async (req, res, next) => {
   try {
-    const { role, isVerified, name, email } = req.body;
+    const { role, isVerified, name, email, isApproved } = req.body;
 
     // RN (Regla de Seguridad Base): Un jerarca no puede degradarse a sí mismo (Lockout prevention).
     if (req.user.id === req.params.id && role && role !== 'admin') {
       throw new ErrorResponse('No puedes cambiar tu propio rol de administrador.', 400);
     }
 
-    const user = await UserService.updateUser(req.params.id, { role, isVerified, name, email });
+    const user = await UserService.updateUser(req.params.id, { role, isVerified, name, email, isApproved });
 
     logger.info(`Usuario actualizado por Admin: ${req.user.email}`, { targetUser: user.email });
 

@@ -22,8 +22,8 @@ const { protect, authorize } = require('../middlewares/auth');
 /** @route POST /api/orders - Iniciación de compra y reserva de stock. */
 router.post('/', protect, createOrder);
 
-/** @route GET /api/orders/user - Historial de adquisiciones del usuario en sesión. */
-router.get('/user', protect, getUserOrders);
+/** @route GET /api/orders/my-orders - Historial de adquisiciones del usuario en sesión. */
+router.get('/my-orders', protect, getUserOrders);
 
 /** @route GET /api/orders/:id - Detalle extendido de una orden específica (incluye claves si aplica). */
 router.get('/:id', protect, getOrder);

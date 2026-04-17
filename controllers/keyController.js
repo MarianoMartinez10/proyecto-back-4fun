@@ -31,6 +31,11 @@ exports.addKeys = async (req, res, next) => {
         if (!product) throw new ErrorResponse('Producto no encontrado', 404);
         if (product.tipo !== 'Digital') throw new ErrorResponse('El producto no es digital', 400);
 
+        // RN (Seguridad Marketplace): Un vendedor solo puede cargar keys a sus propios productos.
+        if (req.user.role !== 'admin' && product.sellerId !== req.user.id) {
+            throw new ErrorResponse('No tienes permiso para gestionar el inventario de este producto', 403);
+        }
+
         // --- Filtros de Integridad de Datos ---
         // 1. Limpia duplicaciones enviadas accidentalmente en el mismo request por el admin.
         const uniqueKeys = [...new Set(keys)];
@@ -98,9 +103,17 @@ exports.addKeys = async (req, res, next) => {
 exports.deleteKey = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const key = await prisma.digitalKey.findUnique({ where: { id } });
+        const key = await prisma.digitalKey.findUnique({ 
+            where: { id },
+            include: { product: true } 
+        });
 
         if (!key) throw new ErrorResponse('Key no encontrada', 404);
+
+        // RN (Seguridad): Verificar propiedad antes de la revocación.
+        if (req.user.role !== 'admin' && key.product.sellerId !== req.user.id) {
+            throw new ErrorResponse('Acceso denegado: No eres el dueño del producto asociado', 403);
+        }
 
         // RN de Seguridad Auditoría: Permite borrar keys traficadas para anularlas en bases de datos externas,
         // pero inyecta un rastro inamovible en el Logger porque afecta la trazabilidad contable de esa orden.
@@ -137,6 +150,14 @@ exports.deleteKey = async (req, res, next) => {
 exports.getKeysByProduct = async (req, res, next) => {
     try {
         const { productId } = req.params;
+
+        // RN (Seguridad): Validar que el solicitante sea dueño o administrador.
+        const product = await prisma.product.findUnique({ where: { id: productId } });
+        if (!product) throw new ErrorResponse('Producto no encontrado', 404);
+        
+        if (req.user.role !== 'admin' && product.sellerId !== req.user.id) {
+            throw new ErrorResponse('Acceso denegado: No tienes acceso a la auditoría de este producto', 403);
+        }
         
         // Paginado/Limiting estricto forzado en Capa Controller para asegurar mantenibilidad de memoria.
         const keys = await prisma.digitalKey.findMany({
