@@ -50,6 +50,7 @@ exports.getUsers = async (req, res, next) => {
           email: true,
           role: true,
           isVerified: true,
+          sellerProfile: true,
           createdAt: true
         },
         orderBy: { createdAt: 'desc' },
