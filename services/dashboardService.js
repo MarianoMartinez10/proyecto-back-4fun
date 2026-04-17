@@ -42,13 +42,13 @@ class DashboardService {
                 select: { unitPriceAtPurchase: true, quantity: true, order: { select: { createdAt: true } } }
             }),
             // Dinero en Escrow (Pendiente de aprobación)
-            prisma.transaction.aggregate({
+            prisma.transaction ? prisma.transaction.aggregate({
                 where: {
                     status: 'PENDING_APPROVAL',
                     ...(sellerId && { sellerId })
                 },
                 _sum: { amount: true }
-            })
+            }).catch(() => ({ _sum: { amount: 0 } })) : Promise.resolve({ _sum: { amount: 0 } })
         ]);
 
         const totalRevenue = paidOrders.reduce((s, o) => s + (Number(o.unitPriceAtPurchase) * o.quantity), 0);
@@ -69,7 +69,7 @@ class DashboardService {
         const monthlyGrowth = lastMonthRev === 0 ? (currentMonthRev > 0 ? 100 : 0)
             : ((currentMonthRev - lastMonthRev) / lastMonthRev) * 100;
 
-        const pendingAmount = Number(pendingTransactions._sum.amount || 0);
+        const pendingAmount = Number(pendingTransactions?._sum?.amount || 0);
 
         return { 
             totalRevenue, 
