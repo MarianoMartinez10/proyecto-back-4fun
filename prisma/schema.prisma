@@ -197,15 +197,13 @@ model Payment {
 
 // Normalización de "shippingAddress: Object embebido" → tabla propia (3NF)
 model ShippingAddress {
-  id       String  @id @default(uuid())
-  orderId  String  @unique
-  fullName String
-  street   String
-  city     String
-  state    String?
-  zip      String
-  country  String
-  order    Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id                String  @id @default(uuid())
+  orderId           String  @unique
+  nombre            String
+  apellido          String
+  correoElectronico String
+  documento         String
+  order             Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 // Normalización del array "orderItems[]" → tabla intermedia (3NF)
