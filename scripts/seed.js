@@ -4,6 +4,16 @@ const bcrypt = require('bcryptjs');
 async function main() {
     console.log("Iniciando llenado de la base de datos (Seeding)...");
 
+    await prisma.digitalKey.deleteMany();
+    await prisma.cartItem.deleteMany();
+    await prisma.orderItem.deleteMany();
+    await prisma.productOffer.deleteMany();
+    await prisma.product.deleteMany();
+    await prisma.sellerProfile.deleteMany();
+    await prisma.user.deleteMany();
+    await prisma.platform.deleteMany();
+    await prisma.genre.deleteMany();
+
     const salt = await bcrypt.genSalt(10);
     const password = await bcrypt.hash('123456', salt);
 
