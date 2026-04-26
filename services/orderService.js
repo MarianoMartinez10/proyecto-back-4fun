@@ -1,8 +1,6 @@
 /**
- * Capa de Servicios: Facturación y Órdenes Core
+ * Capa de Servicios: Facturación y Órdenes Core (G2A Style)
  * --------------------------------------------------------------------------
- * Eje principal del flujo financiero (Checkout Pipeline). Abstrae complejas 
- * inserciones multifamiliares y control cruzado lógico de base de datos.
  */
 
 const prisma = require('../lib/prisma');
@@ -13,11 +11,6 @@ const ErrorResponse = require('../utils/errorResponse');
 
 class OrderService {
 
-    /**
-     * Consolidación Inicial: Chequea inventarios y forja un ticket "Pendiente".
-     * RN (Regla de Atomicidad): Intercepta fallos aislados en reservaciones de stock mediante
-     * heurísticas de compensación manual (Rollback) simuladas.
-     */
     async createOrder({ user, orderItems, shippingAddress, paymentMethod }) {
         if (!orderItems?.length) throw new ErrorResponse('El carrito está vacío.', 400);
 
@@ -27,57 +20,62 @@ class OrderService {
         let calculatedTotal = 0;
         const validatedItems = [];
 
-        // RN (Seguridad de Precios): El frontend manda la intención, el Service reconstruye el ticket
-        // cotizando con valores limpios atados en la Base de Datos para evitar Inyección de Precios.
         for (const item of orderItems) {
-            const product = await prisma.product.findUnique({ where: { id: item.product } });
-            if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
+            const offer = await prisma.productOffer.findUnique({ 
+                where: { id: item.offerId },
+                include: { product: true }
+            });
+            if (!offer) throw new ErrorResponse(`Oferta no encontrada`, 400);
 
-            // RN de Disponibilidad por Tipología (Físico vs Digital)
+            const product = offer.product;
+
             if (product.tipo === 'Digital') {
                 const availableKeys = await prisma.digitalKey.count({
-                    where: { productId: item.product, estado: 'DISPONIBLE' }
+                    where: { offerId: item.offerId, estado: 'DISPONIBLE' }
                 });
                 if (availableKeys < item.quantity) {
-                    throw new ErrorResponse(`Stock insuficiente de keys para: ${product.nombre} (Disponibles: ${availableKeys})`, 400);
+                    throw new ErrorResponse(`Stock insuficiente de keys para la oferta de: ${product.nombre}`, 400);
                 }
             } else {
-                if (product.stock < item.quantity) throw new ErrorResponse(`Stock insuficiente para: ${product.nombre}`, 400);
+                if (offer.stock < item.quantity) throw new ErrorResponse(`Stock insuficiente para la oferta de: ${product.nombre}`, 400);
             }
 
-            calculatedTotal += Number(product.precio) * item.quantity;
+            calculatedTotal += Number(offer.precio) * item.quantity;
             validatedItems.push({
-                id: product.id,
-                title: item.name,
+                offerId: offer.id,
+                productId: product.id,
+                title: product.nombre,
                 quantity: Number(item.quantity),
-                unit_price: Number(product.precio), // Precio auditado y sellado.
+                unit_price: Number(offer.precio), 
                 currency_id: 'ARS',
-                picture_url: item.image || undefined,
+                picture_url: product.imagenUrl || undefined,
                 description: product.descripcion?.substring(0, 200) || '',
                 tipo: product.tipo
             });
         }
 
-        // RN (Gestión de Inventario Optimista): Reduce los saldos provisionalmente asumiendo 
-        // voluntad total de pago por parte del cliente.
         for (const item of validatedItems) {
             if (item.tipo !== 'Digital') {
-                const updated = await prisma.product.updateMany({
-                    where: { id: item.id, stock: { gte: item.quantity } },
-                    data: { stock: { decrement: item.quantity }, cantidadVendida: { increment: item.quantity } }
+                const updated = await prisma.productOffer.updateMany({
+                    where: { id: item.offerId, stock: { gte: item.quantity } },
+                    data: { stock: { decrement: item.quantity } }
                 });
                 if (updated.count === 0) {
-                    // Compensatory Action (Sudo Rollback manual)
+                    // Compensatory Action
                     for (const prev of validatedItems) {
-                        if (prev.id === item.id) break;
-                        await prisma.product.update({ where: { id: prev.id }, data: { stock: { increment: prev.quantity }, cantidadVendida: { decrement: prev.quantity } } });
+                        if (prev.offerId === item.offerId) break;
+                        await prisma.productOffer.update({ where: { id: prev.offerId }, data: { stock: { increment: prev.quantity } } });
                     }
-                    throw new ErrorResponse(`Stock agotado para: ${item.title}.`, 409);
+                    throw new ErrorResponse(`Stock agotado para la oferta de: ${item.title}.`, 409);
                 }
+                
+                await prisma.product.update({
+                    where: { id: item.productId },
+                    data: { cantidadVendida: { increment: item.quantity } }
+                });
             }
         }
 
-        // DML de Inserción Relacional Compleja
         const order = await prisma.order.create({
             data: {
                 userId: user.id || user._id?.toString() || user,
@@ -90,9 +88,9 @@ class OrderService {
                 shippingAddress: shippingAddress ? { create: shippingAddress } : undefined,
                 orderItems: {
                     create: validatedItems.map(i => ({
-                        productId: i.id,
+                        offerId: i.offerId,
                         quantity: i.quantity,
-                        unitPriceAtPurchase: i.unit_price // Snapshot histórico para contabilidad inmutable.
+                        unitPriceAtPurchase: i.unit_price
                     }))
                 }
             }
@@ -115,9 +113,9 @@ class OrderService {
                 where: { userId },
                 orderBy: { createdAt: 'desc' },
                 include: { 
-                    orderItems: { include: { product: true } }, 
+                    orderItems: { include: { offer: { include: { product: true } } } }, 
                     shippingAddress: true, 
-                    digitalKeys: { select: { id: true, clave: true, productId: true } } 
+                    digitalKeys: { select: { id: true, clave: true, offerId: true } } 
                 },
                 skip: (pageNum - 1) * limitNum,
                 take: limitNum
@@ -136,8 +134,8 @@ class OrderService {
                     ...i, 
                     _id: i.id, 
                     price: Number(i.unitPriceAtPurchase), 
-                    name: i.product?.nombre || 'Producto Desconocido', 
-                    image: i.product?.imagenUrl || DEFAULT_IMAGE 
+                    name: i.offer?.product?.nombre || 'Oferta Desconocida', 
+                    image: i.offer?.product?.imagenUrl || DEFAULT_IMAGE 
                 }))
             }))
         };
@@ -146,12 +144,15 @@ class OrderService {
     async getOrderById(orderId, userId, userRole) {
         const order = await prisma.order.findUnique({
             where: { id: orderId },
-            include: { user: { select: { id: true, name: true, email: true } }, orderItems: { include: { product: true } }, shippingAddress: true }
+            include: { 
+                user: { select: { id: true, name: true, email: true } }, 
+                orderItems: { include: { offer: { include: { product: true } } } }, 
+                shippingAddress: true 
+            }
         });
         
         if (!order) throw new ErrorResponse('Orden no encontrada', 404);
         
-        // RN Permisos (Tenencia): Inquisita pertenencia local vs rol piramidal.
         if (order.userId !== userId && userRole !== 'admin') throw new ErrorResponse('No autorizado para ver esta orden', 403);
         
         return { 
@@ -161,8 +162,8 @@ class OrderService {
                 ...i, 
                 _id: i.id, 
                 price: Number(i.unitPriceAtPurchase), 
-                name: i.product?.nombre || 'Producto Desconocido', 
-                image: i.product?.imagenUrl || DEFAULT_IMAGE 
+                name: i.offer?.product?.nombre || 'Oferta Desconocida', 
+                image: i.offer?.product?.imagenUrl || DEFAULT_IMAGE 
             }))
         };
     }
@@ -180,7 +181,7 @@ class OrderService {
                 where,
                 include: {
                     user: { select: { id: true, name: true, email: true } },
-                    orderItems: { include: { product: true } },
+                    orderItems: { include: { offer: { include: { product: true } } } },
                     shippingAddress: true
                 },
                 orderBy: { createdAt: 'desc' },
@@ -202,8 +203,8 @@ class OrderService {
                     ...i, 
                     _id: i.id, 
                     price: Number(i.unitPriceAtPurchase), 
-                    name: i.product?.nombre || 'Producto Desconocido', 
-                    image: i.product?.imagenUrl || DEFAULT_IMAGE 
+                    name: i.offer?.product?.nombre || 'Oferta Desconocida', 
+                    image: i.offer?.product?.imagenUrl || DEFAULT_IMAGE 
                 }))
             }))
         };
@@ -222,8 +223,8 @@ class OrderService {
             where: { id: orderId },
             include: {
                 user: { select: { id: true, name: true, email: true } },
-                orderItems: { include: { product: true } },
-                digitalKeys: { select: { id: true, clave: true, productId: true } }
+                orderItems: { include: { offer: { include: { product: true } } } },
+                digitalKeys: { select: { id: true, clave: true, offerId: true } }
             }
         });
 
@@ -243,10 +244,10 @@ class OrderService {
             });
 
             for (const item of order.orderItems || []) {
-                if (item.product?.tipo !== 'Digital') continue;
+                if (item.offer?.product?.tipo !== 'Digital') continue;
 
                 const alreadyAssigned = await tx.digitalKey.count({
-                    where: { orderId, productId: item.productId }
+                    where: { orderId, offerId: item.offerId }
                 });
 
                 const missingKeys = Math.max(0, Number(item.quantity) - alreadyAssigned);
@@ -254,7 +255,7 @@ class OrderService {
 
                 const availableKeys = await tx.digitalKey.findMany({
                     where: {
-                        productId: item.productId,
+                        offerId: item.offerId,
                         estado: 'DISPONIBLE',
                         orderId: null,
                         activo: true,
@@ -265,7 +266,7 @@ class OrderService {
                 });
 
                 if (availableKeys.length < missingKeys) {
-                    throw new ErrorResponse(`No hay keys suficientes para ${item.product?.nombre || 'producto digital'}`, 409);
+                    throw new ErrorResponse(`No hay keys suficientes en esta oferta para ${item.offer?.product?.nombre}`, 409);
                 }
 
                 const keyIds = availableKeys.map(k => k.id);
@@ -282,48 +283,45 @@ class OrderService {
                     }
                 });
 
-                if (updatedKeys.count !== keyIds.length) {
-                    throw new ErrorResponse('No se pudieron reservar todas las keys de forma segura', 409);
-                }
-
                 assignedKeysCount += updatedKeys.count;
-
-                const currentAvailable = await tx.digitalKey.count({
-                    where: { productId: item.productId, estado: 'DISPONIBLE', activo: true }
-                });
-
-                await tx.product.update({
-                    where: { id: item.productId },
-                    data: { stock: currentAvailable }
-                });
             }
 
             const paidOrder = await tx.order.findUnique({
                 where: { id: orderId },
                 include: {
                     user: { select: { id: true, name: true, email: true } },
-                    orderItems: { include: { product: true } },
-                    digitalKeys: { select: { id: true, clave: true, productId: true } }
+                    orderItems: { include: { offer: { include: { product: true } } } },
+                    digitalKeys: { select: { id: true, clave: true, offerId: true } }
                 }
             });
 
-            // RN (Sistema de Escrow): Cuando la orden se paga, crear transacción en PENDING_APPROVAL
-            // El dinero queda retenido hasta que Admin lo apruebe
+            // RN (Sistema de Escrow Multi-Vendedor): 
+            // Agrupar los items por vendedor y crear una transacción para cada uno.
             if (paidOrder && paidOrder.orderItems?.length > 0) {
-                const firstItem = paidOrder.orderItems[0];
-                const sellerId = firstItem.product?.sellerId;
+                const sellerTotals = {};
 
-                if (sellerId) {
+                for (const item of paidOrder.orderItems) {
+                    const sellerId = item.offer?.sellerId;
+                    if (!sellerId) continue;
+
+                    const itemTotal = Number(item.unitPriceAtPurchase) * Number(item.quantity);
+                    if (!sellerTotals[sellerId]) {
+                        sellerTotals[sellerId] = 0;
+                    }
+                    sellerTotals[sellerId] += itemTotal;
+                }
+
+                for (const [sellerId, amount] of Object.entries(sellerTotals)) {
                     await tx.transaction.create({
                         data: {
                             orderId: paidOrder.id,
                             sellerId,
-                            amount: paidOrder.totalPrice,
+                            amount,
                             status: 'PENDING_APPROVAL'
                         }
                     });
 
-                    logger.info(`[OrderService] Transacción de escrow creada para orden ${paidOrder.id} - Vendedor: ${sellerId} - Monto: $${paidOrder.totalPrice} - Status: PENDING_APPROVAL`);
+                    logger.info(`[OrderService] Transacción de escrow creada para orden ${paidOrder.id} - Vendedor: ${sellerId} - Monto: $${amount}`);
                 }
             }
 
@@ -342,16 +340,10 @@ class OrderService {
                 );
 
                 if (!emailResult?.success) {
-                    logger.warn('[OrderService] Orden pagada pero el envio de email de keys no fue exitoso', {
-                        orderId,
-                        reason: emailResult?.message || 'motivo desconocido'
-                    });
+                    logger.warn('[OrderService] Orden pagada pero el envio de email falló');
                 }
             } catch (emailError) {
-                logger.error('[OrderService] Error enviando keys por email tras marcar pago', {
-                    orderId,
-                    error: emailError.message
-                });
+                logger.error('[OrderService] Error enviando keys por email');
             }
         }
 
@@ -363,4 +355,3 @@ class OrderService {
 }
 
 module.exports = new OrderService();
-// Force reload after schema push

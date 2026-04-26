@@ -57,7 +57,7 @@ model User {
 
   // Relaciones Multi-Rol (3FN)
   sellerProfile SellerProfile?
-  products      Product[]      @relation("SellerProducts")
+  offers        ProductOffer[] @relation("SellerOffers")
   orders        Order[]
   cart          Cart?
   wishlist     Wishlist?
@@ -120,18 +120,13 @@ model Product {
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
-  // Auditoría y Propiedad (3FN)
-  sellerId      String?      // Nullable temporalmente para migración de datos existentes
-  seller        User?        @relation("SellerProducts", fields: [sellerId], references: [id])
-
+  // Relaciones Base
   platform      Platform             @relation(fields: [platformId], references: [id])
   genre         Genre                @relation(fields: [genreId], references: [id])
   requirements  ProductRequirement[]
-  orderItems    OrderItem[]
-  cartItems     CartItem[]
+  offers        ProductOffer[]
   wishlistItems WishlistItem[]
   reviews       Review[]
-  digitalKeys   DigitalKey[]
 
   @@index([activo, orden])
   @@index([activo, platformId])
@@ -147,6 +142,29 @@ model ProductRequirement {
   key       String  // "os", "processor", "memory", etc.
   value     String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// ── Ofertas de Productos (G2A Style) ──────────────────────────────────────────
+
+model ProductOffer {
+  id        String   @id @default(uuid())
+  productId String
+  sellerId  String
+  precio    Decimal  @db.Decimal(10, 2)
+  stock     Int      @default(0)
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  seller    User     @relation("SellerOffers", fields: [sellerId], references: [id], onDelete: Cascade)
+  
+  orderItems    OrderItem[]
+  cartItems     CartItem[]
+  digitalKeys   DigitalKey[]
+  
+  @@index([productId, activo])
+  @@index([sellerId])
 }
 
 // ── Orden ─────────────────────────────────────────────────────────────────────
@@ -210,11 +228,11 @@ model ShippingAddress {
 model OrderItem {
   id                  String  @id @default(uuid())
   orderId             String
-  productId           String
+  offerId             String
   quantity            Int
   unitPriceAtPurchase Decimal @default(0) @db.Decimal(10, 2)
   order               Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product             Product @relation(fields: [productId], references: [id])
+  offer               ProductOffer @relation(fields: [offerId], references: [id])
 }
 
 // ── Carrito ───────────────────────────────────────────────────────────────────
@@ -231,12 +249,12 @@ model Cart {
 model CartItem {
   id        String  @id @default(uuid())
   cartId    String
-  productId String
+  offerId   String
   quantity  Int     @default(1)
   cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  product   Product @relation(fields: [productId], references: [id])
+  offer     ProductOffer @relation(fields: [offerId], references: [id])
 
-  @@unique([cartId, productId])
+  @@unique([cartId, offerId])
 }
 
 // ── Lista de Deseos ───────────────────────────────────────────────────────────
@@ -303,7 +321,7 @@ enum KeyStatus {
 
 model DigitalKey {
   id         String    @id @default(uuid())
-  productId  String
+  offerId    String
   clave      String    @unique
   estado     KeyStatus @default(DISPONIBLE)
   activo     Boolean   @default(true)
@@ -312,7 +330,7 @@ model DigitalKey {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  product Product @relation(fields: [productId], references: [id])
+  offer   ProductOffer @relation(fields: [offerId], references: [id])
   order   Order?  @relation(fields: [orderId], references: [id])
 }
 

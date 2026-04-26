@@ -22,6 +22,10 @@ const verifyProductOwnership = require('../middlewares/verifyProductOwnership');
  * mercadería y sus herramientas de administración jerárquica. (MVC / Router)
  */
 
+// ─── RUTAS ANIDADAS (NESTED ROUTES) ───
+const offerRouter = require('./offerRoutes');
+router.use('/:productId/offers', offerRouter);
+
 // ─── ESCAPARATE PÚBLICO (READ-ONLY) ───
 
 /** @route GET /api/products - Consulta con filtros, paginación y ordenamiento. */
@@ -43,10 +47,10 @@ router.get('/:id', getProduct);
 router.get('/:id/management', protect, authorize('admin', 'seller'), verifyProductOwnership, getProduct);
 
 
-// ─── GESTIÓN DE INVENTARIO (ADMIN & SELLER) ───
+// ─── GESTIÓN DE INVENTARIO (ADMIN) ───
 
 /** @route POST /api/products - Alta de nuevo producto (Asociado al usuario activo). */
-router.post('/', protect, authorize('admin', 'seller'), createProduct);
+router.post('/', protect, authorize('admin'), createProduct);
 
 /** @route PUT /api/products/:id/reorder - Mutación de posición visual (Ranking Escaparate). */
 router.put('/:id/reorder', protect, authorize('admin'), reorderProduct);

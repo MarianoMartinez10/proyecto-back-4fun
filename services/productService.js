@@ -16,7 +16,14 @@ const logger = require('../utils/logger');
 const PRODUCT_INCLUDE = {
     platform: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
     genre: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
-    _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE' } } } },
+    offers: {
+        where: { activo: true },
+        include: {
+            seller: { include: { sellerProfile: true } },
+            _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE', activo: true } } } }
+        },
+        orderBy: { precio: 'asc' }
+    }
 };
 
 class ProductService extends BaseService {
@@ -38,12 +45,7 @@ class ProductService extends BaseService {
     getIncludeRelations() {
         return { 
             ...PRODUCT_INCLUDE, 
-            requirements: true, 
-            seller: { 
-                include: { 
-                    sellerProfile: true 
-                } 
-            } 
+            requirements: true
         };
     }
 
@@ -106,8 +108,8 @@ class ProductService extends BaseService {
             imageId: p.imagenUrl || 'https://placehold.co/600x400?text=Sin+Imagen',
             trailerUrl: p.trailerUrl || '',
             rating: Number(p.calificacion),
-            // RN - Disponibilidad Digital: Si es Digital, el stock real es el conteo de Keys disponibles en BDD.
-            stock: p.tipo === 'Digital' ? (p._count?.digitalKeys ?? p.stock) : p.stock,
+            // RN - Disponibilidad: El stock total está cacheado desde OfferService
+            stock: p.stock,
             active: p.activo,
             specPreset: p.specPreset,
             requirements: p.requirements
@@ -118,12 +120,16 @@ class ProductService extends BaseService {
                 )
                 : {},
             order: p.orden,
-            // RN (3FN): Exponemos datos básicos del vendedor para el catálogo.
-            seller: p.seller ? {
-                id: p.seller.id,
-                name: p.seller.name,
-                storeName: p.seller.sellerProfile?.storeName || 'Tienda Oficial'
-            } : null
+            // RN (G2A Style): Lista de ofertas activas de vendedores
+            offers: (p.offers || []).map(o => ({
+                id: o.id,
+                sellerId: o.sellerId,
+                sellerName: o.seller?.name || 'Vendedor',
+                storeName: o.seller?.sellerProfile?.storeName || o.seller?.name || 'Tienda',
+                price: Number(o.precio),
+                stock: p.tipo === 'Digital' ? (o._count?.digitalKeys || 0) : o.stock,
+                active: o.activo
+            }))
         };
     }
 
@@ -152,9 +158,9 @@ class ProductService extends BaseService {
             });
         }
 
-        // RN (Seguridad y Multi-vendedor): Si hay sellerId, restringimos los resultados.
+        // RN (Seguridad y Multi-vendedor): Si hay sellerId, restringimos a productos donde el vendedor tiene ofertas.
         if (sellerId) {
-            where.sellerId = sellerId;
+            where.offers = { some: { sellerId } };
         }
 
         // RN - Filtrado Taxonómico: Soporta búsqueda múltiple (OR) por Slugs.
@@ -212,7 +218,7 @@ class ProductService extends BaseService {
         const [products, count] = await Promise.all([
             prisma.product.findMany({
                 where,
-                include: { ...PRODUCT_INCLUDE, requirements: true, seller: { include: { sellerProfile: true } } },
+                include: { ...PRODUCT_INCLUDE, requirements: true },
                 skip: (pageNum - 1) * limitNum,
                 take: limitNum,
                 orderBy
@@ -312,10 +318,9 @@ class ProductService extends BaseService {
                 descuentoPorcentaje: discountPercentage ?? 0,
                 descuentoFechaFin: discountEndDate ? new Date(discountEndDate) : null,
                 orden: newOrder,
-                sellerId, // Vinculación mandatoria (3FN)
                 requirements: { create: requirementsData }
             },
-            include: { ...PRODUCT_INCLUDE, requirements: true, seller: { include: { sellerProfile: true } } }
+            include: { ...PRODUCT_INCLUDE, requirements: true }
         });
 
         logger.info(`[ProductService] Producto creado: ${product.id}`);
@@ -442,15 +447,17 @@ class ProductService extends BaseService {
             return { valid: true };
         }
 
-        // Sellers: Valida que todos los productos sean suyos
+        // Sellers: Valida que tengan al menos una oferta en estos productos (Simplificación para eliminación de ofertas, aunque el endpoint borra el producto base si es Admin)
+        // En esta nueva arquitectura, los Sellers NO borran productos base, solo borran sus ofertas.
+        // Pero mantenemos la validación para seguridad.
         const unauthorizedIds = [];
         const products = await prisma.product.findMany({
             where: { id: { in: ids } },
-            select: { id: true, sellerId: true }
+            include: { offers: { where: { sellerId: userId } } }
         });
 
         for (const product of products) {
-            if (product.sellerId !== userId) {
+            if (product.offers.length === 0) {
                 unauthorizedIds.push(product.id);
             }
         }

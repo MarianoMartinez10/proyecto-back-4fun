@@ -25,8 +25,13 @@ class CartService {
             include: {
                 items: {
                     include: {
-                        product: {
-                            include: { platform: true, genre: true, requirements: true }
+                        offer: {
+                            include: {
+                                product: {
+                                    include: { platform: true, genre: true, requirements: true }
+                                },
+                                seller: { include: { sellerProfile: true } }
+                            }
                         }
                     }
                 }
@@ -41,7 +46,16 @@ class CartService {
             _id: item.id,
             id: item.id,
             quantity: item.quantity,
-            product: ProductService.productToDTO(item.product)
+            offerId: item.offerId,
+            seller: item.offer.seller ? {
+                id: item.offer.seller.id,
+                name: item.offer.seller.name,
+                storeName: item.offer.seller.sellerProfile?.storeName || item.offer.seller.name
+            } : null,
+            product: {
+                ...ProductService.productToDTO(item.offer.product),
+                finalPrice: Number(item.offer.precio) // Sobrescribe el precio genérico con el de la oferta
+            }
         }));
 
         return { ...cart, _id: cart.id, items: transformedItems };
@@ -61,15 +75,18 @@ class CartService {
      * @param {number} quantity - Volúmen de artículos.
      * @returns {Object} Carrito poblado post-modificación.
      */
-    async addToCart(userId, productId, quantity) {
-        const product = await prisma.product.findUnique({ where: { id: productId } });
+    async addToCart(userId, offerId, quantity) {
+        const offer = await prisma.productOffer.findUnique({ 
+            where: { id: offerId }, 
+            include: { product: true } 
+        });
         
         // Manejo Excepciones: Aborta si se envía un fantasma.
-        if (!product) throw new ErrorResponse('Producto no encontrado', 404);
+        if (!offer) throw new ErrorResponse('Oferta no encontrada', 404);
         
         // Regla de Negocio (RN-05): "Disponibilidad Comercial". 
         // Impide anexar artículos temporalmente suspendidos en catálogo.
-        if (!product.activo) throw new ErrorResponse('Este producto ya no está disponible', 400);
+        if (!offer.activo || !offer.product.activo) throw new ErrorResponse('Esta oferta ya no está disponible', 400);
 
         let cart = await prisma.cart.findUnique({
             where: { userId },
@@ -78,23 +95,28 @@ class CartService {
 
         let currentQty = 0;
         if (cart) {
-            const existingItem = cart.items.find(i => i.productId === productId);
+            const existingItem = cart.items.find(i => i.offerId === offerId);
             if (existingItem) currentQty = existingItem.quantity;
         }
 
+        // RN stock.
+        let availableStock = offer.stock;
+        if (offer.product.tipo === 'Digital') {
+            availableStock = await prisma.digitalKey.count({ where: { offerId, estado: 'DISPONIBLE', activo: true }});
+        }
+
         // Regla de Negocio (RN-07): "Concurrencia y Límite de Stock".
-        // Bloquea adicionar una mercadería si excede las existencias físicas en el inventario.
-        if (product.stock < currentQty + quantity) {
-            throw new ErrorResponse(`Stock insuficiente. Disponible: ${product.stock}, en carrito: ${currentQty}`, 400);
+        if (availableStock < currentQty + quantity) {
+            throw new ErrorResponse(`Stock insuficiente. Disponible: ${availableStock}, en carrito: ${currentQty}`, 400);
         }
 
         // Diseño arquitectónico: Lazy Creation del contenedor cart.
         if (!cart) {
             await prisma.cart.create({
-                data: { userId, items: { create: [{ productId, quantity }] } }
+                data: { userId, items: { create: [{ offerId, quantity }] } }
             });
         } else {
-            const existingItem = cart.items.find(i => i.productId === productId);
+            const existingItem = cart.items.find(i => i.offerId === offerId);
             // Agregado Incremental: Si el ítem yace en el carro, sumamos qties en bdd.
             if (existingItem) {
                 await prisma.cartItem.update({
@@ -102,7 +124,7 @@ class CartService {
                     data: { quantity: existingItem.quantity + quantity }
                 });
             } else {
-                await prisma.cartItem.create({ data: { cartId: cart.id, productId, quantity } });
+                await prisma.cartItem.create({ data: { cartId: cart.id, offerId, quantity } });
             }
         }
 

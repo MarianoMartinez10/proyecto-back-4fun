@@ -3,44 +3,41 @@
  * --------------------------------------------------------------------------
  * Concentra la operativa del inventario físico/digital. Su diseño protege
  * el acceso desde clientes, ya que todas las interacciones aquí son de 
- * dominio Administrativo (Carga, Revocación, Vistas maestras).
+ * dominio Administrativo o de Vendedor para sus ofertas.
  */
 
 const prisma = require('../lib/prisma');
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
+const OfferService = require('../services/offerService');
 
 /**
- * Inserta un lote de claves digitales y actualiza el contador de stock del producto.
- * 
- * @param {Object} req - Body esperando { productId, keys: [string] }.
- * @param {Object} res - Respuesta HTTP serializada.
- * @param {Function} next - Trampa de excepciones.
+ * Inserta un lote de claves digitales a una Oferta específica y actualiza el caché.
  */
 exports.addKeys = async (req, res, next) => {
     try {
-        const { productId, keys } = req.body;
+        const { offerId, keys } = req.body;
 
-        if (!productId) throw new ErrorResponse('ProductId requerido', 400);
+        if (!offerId) throw new ErrorResponse('OfferId requerido', 400);
         if (!keys || !Array.isArray(keys) || keys.length === 0) {
             throw new ErrorResponse('Se requiere un array de keys no vacío', 400);
         }
 
-        // RN (Validación Estructural): Las llaves digitales solo aplican a mercadería compatible.
-        const product = await prisma.product.findUnique({ where: { id: productId } });
-        if (!product) throw new ErrorResponse('Producto no encontrado', 404);
-        if (product.tipo !== 'Digital') throw new ErrorResponse('El producto no es digital', 400);
+        const offer = await prisma.productOffer.findUnique({ 
+            where: { id: offerId },
+            include: { product: true }
+        });
 
-        // RN (Seguridad Marketplace): Un vendedor solo puede cargar keys a sus propios productos.
-        if (req.user.role !== 'admin' && product.sellerId !== req.user.id) {
-            throw new ErrorResponse('No tienes permiso para gestionar el inventario de este producto', 403);
+        if (!offer) throw new ErrorResponse('Oferta no encontrada', 404);
+        if (offer.product.tipo !== 'Digital') throw new ErrorResponse('El producto no es digital', 400);
+
+        // RN (Seguridad Marketplace): Un vendedor solo puede cargar keys a sus propias ofertas.
+        if (req.user.role !== 'admin' && offer.sellerId !== req.user.id) {
+            throw new ErrorResponse('No tienes permiso para gestionar el inventario de esta oferta', 403);
         }
 
-        // --- Filtros de Integridad de Datos ---
-        // 1. Limpia duplicaciones enviadas accidentalmente en el mismo request por el admin.
         const uniqueKeys = [...new Set(keys)];
 
-        // 2. Compara contra BDD para descartar colisiones con claves históricas.
         const existingKeysDocs = await prisma.digitalKey.findMany({
             where: { clave: { in: uniqueKeys } },
             select: { clave: true }
@@ -50,7 +47,7 @@ exports.addKeys = async (req, res, next) => {
         const newKeysToInsert = uniqueKeys
             .filter(k => !existingKeysSet.has(k))
             .map(k => ({
-                productId: productId,
+                offerId: offerId,
                 clave: k,
                 estado: 'DISPONIBLE'
             }));
@@ -63,24 +60,19 @@ exports.addKeys = async (req, res, next) => {
             });
         }
 
-        // --- Operación DML ---
         await prisma.digitalKey.createMany({
             data: newKeysToInsert,
             skipDuplicates: true
         });
 
-        // RN (Sincronía de Caching): Fuerza la actualización del contador 'stock' en Product
-        // para mantener el Frontend consistente sin tener que hacer Joins masivos cada vez que un usuario mira el shop.
+        // Actualizamos caché del producto
+        await OfferService.updateProductCache(offer.productId);
+
         const currentTotal = await prisma.digitalKey.count({
-            where: { productId: productId, estado: 'DISPONIBLE' }
-        });
-        
-        await prisma.product.update({
-            where: { id: productId },
-            data: { stock: currentTotal }
+            where: { offerId: offerId, estado: 'DISPONIBLE' }
         });
 
-        logger.info(`🔑 ${newKeysToInsert.length} keys agregadas para ${product.nombre}`);
+        logger.info(`🔑 ${newKeysToInsert.length} keys agregadas para oferta de ${offer.product.nombre}`);
 
         res.status(201).json({
             success: true,
@@ -91,77 +83,65 @@ exports.addKeys = async (req, res, next) => {
         });
 
     } catch (error) {
-        // Manejo Excepciones (Generalizado): Protege la API de caer si falla el DB Transaction.
         next(error);
     }
 };
 
 /**
  * Revoca y expulsa del sistema una llave específica.
- * Usado ante tickets de soporte por claves defectuosas provistas por el proveedor.
  */
 exports.deleteKey = async (req, res, next) => {
     try {
         const { id } = req.params;
         const key = await prisma.digitalKey.findUnique({ 
             where: { id },
-            include: { product: true } 
+            include: { offer: { include: { product: true } } } 
         });
 
         if (!key) throw new ErrorResponse('Key no encontrada', 404);
 
-        // RN (Seguridad): Verificar propiedad antes de la revocación.
-        if (req.user.role !== 'admin' && key.product.sellerId !== req.user.id) {
-            throw new ErrorResponse('Acceso denegado: No eres el dueño del producto asociado', 403);
+        if (req.user.role !== 'admin' && key.offer.sellerId !== req.user.id) {
+            throw new ErrorResponse('Acceso denegado: No eres el dueño de la oferta asociada', 403);
         }
 
-        // RN de Seguridad Auditoría: Permite borrar keys traficadas para anularlas en bases de datos externas,
-        // pero inyecta un rastro inamovible en el Logger porque afecta la trazabilidad contable de esa orden.
         if (key.estado === 'VENDIDA') {
-            logger.warn(`🗑️ Admin borrando key VENDIDA: ${key.clave} (Orden: ${key.orderId})`);
+            logger.warn(`🗑️ Borrando key VENDIDA: ${key.clave} (Orden: ${key.orderId})`);
         }
 
-        const productId = key.productId;
+        const offerId = key.offerId;
+        const productId = key.offer.productId;
+        
         await prisma.digitalKey.delete({ where: { id } });
 
-        // RN Sincronía: Recalibra el master data del stock total tras la evaporación del ítem.
-        const product = await prisma.product.findUnique({ where: { id: productId } });
-        if (product) {
-            const count = await prisma.digitalKey.count({
-                where: { productId: productId, estado: 'DISPONIBLE' }
-            });
-            await prisma.product.update({
-                where: { id: productId },
-                data: { stock: count }
-            });
+        await OfferService.updateProductCache(productId);
 
-            return res.json({ success: true, message: 'Key eliminada', currentStock: count });
-        }
+        const count = await prisma.digitalKey.count({
+            where: { offerId: offerId, estado: 'DISPONIBLE' }
+        });
 
-        res.json({ success: true, message: 'Key eliminada', currentStock: 0 });
+        res.json({ success: true, message: 'Key eliminada', currentStock: count });
     } catch (error) {
         next(error);
     }
 };
 
 /**
- * Sirve al Panel Admin el catálogo interno de licencias asociadas a un producto raíz.
+ * Sirve al Panel Admin/Vendedor las licencias de una oferta.
  */
 exports.getKeysByProduct = async (req, res, next) => {
+    // Nota: Aunque la ruta se llame getKeysByProduct, en realidad recibe un offerId en la nueva arq.
     try {
-        const { productId } = req.params;
+        const { productId: offerId } = req.params; // Re-mapeo para mantener compatibilidad temporal
 
-        // RN (Seguridad): Validar que el solicitante sea dueño o administrador.
-        const product = await prisma.product.findUnique({ where: { id: productId } });
-        if (!product) throw new ErrorResponse('Producto no encontrado', 404);
+        const offer = await prisma.productOffer.findUnique({ where: { id: offerId } });
+        if (!offer) throw new ErrorResponse('Oferta no encontrada', 404);
         
-        if (req.user.role !== 'admin' && product.sellerId !== req.user.id) {
-            throw new ErrorResponse('Acceso denegado: No tienes acceso a la auditoría de este producto', 403);
+        if (req.user.role !== 'admin' && offer.sellerId !== req.user.id) {
+            throw new ErrorResponse('Acceso denegado: No tienes acceso a esta oferta', 403);
         }
         
-        // Paginado/Limiting estricto forzado en Capa Controller para asegurar mantenibilidad de memoria.
         const keys = await prisma.digitalKey.findMany({
-            where: { productId: productId },
+            where: { offerId: offerId },
             orderBy: { createdAt: 'desc' },
             take: 100
         });

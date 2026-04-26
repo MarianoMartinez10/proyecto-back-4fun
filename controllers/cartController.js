@@ -40,13 +40,13 @@ exports.getCart = async (req, res, next) => {
  */
 exports.addToCart = async (req, res, next) => {
   try {
-    const { productId, quantity } = req.body;
+    const { offerId, quantity } = req.body;
     const userId = req.user.id;
     
     // RN (Regla de Negocio): La validación crítica de "Producto Activo" (RN-05) y 
     // "Stock Disponible" (RN-07) se delega completamente a CartService.addToCart.
     // El controlador asume que si el servicio no lanza errores, la regla se cumplió.
-    const populatedCart = await CartService.addToCart(userId, productId, quantity);
+    const populatedCart = await CartService.addToCart(userId, offerId, quantity);
     
     res.json({ success: true, message: 'Agregado', cart: populatedCart });
   } catch (error) {

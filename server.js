@@ -64,6 +64,7 @@ app.use(hpp());
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
+app.use('/api/offers', require('./routes/offerRoutes'));
 app.use('/api/wishlist', require('./routes/wishlistRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
