@@ -260,25 +260,35 @@ class AuthService {
         if (!storeName) throw new ErrorResponse('El nombre de la tienda es requerido', 400);
 
         const storeExists = await prisma.sellerProfile.findUnique({ where: { storeName } });
-        if (storeExists) throw new ErrorResponse('El nombre de la tienda ya está en uso', 400);
+        if (storeExists && storeExists.userId !== userId) throw new ErrorResponse('El nombre de la tienda ya está en uso', 400);
 
         // RN: Si el usuario es ADMIN, no debe perder su rango ni requerir aprobación.
         const currentUser = await prisma.user.findUnique({ where: { id: userId } });
         const shouldBeApproved = currentUser.role === 'admin';
         const finalRole = currentUser.role === 'admin' ? 'admin' : 'seller';
 
-        // Operación Atómica (3FN): Actualiza rol y crea perfil en una sola transacción.
+        // Operación Atómica (3FN): Actualiza rol y crea/actualiza perfil en una sola transacción.
         const user = await prisma.user.update({
             where: { id: userId },
             data: {
                 role: finalRole,
                 sellerProfile: {
-                    create: {
-                        storeName,
-                        storeDescription,
-                        bankAccount,
-                        taxId,
-                        isApproved: shouldBeApproved
+                    upsert: {
+                        create: {
+                            storeName,
+                            storeDescription,
+                            bankAccount,
+                            taxId,
+                            isApproved: shouldBeApproved
+                        },
+                        update: {
+                            storeName,
+                            storeDescription,
+                            bankAccount,
+                            taxId,
+                            // Mantenemos el estado de aprobación anterior si ya existe, a menos que sea admin
+                            isApproved: shouldBeApproved ? true : undefined
+                        }
                     }
                 }
             },
