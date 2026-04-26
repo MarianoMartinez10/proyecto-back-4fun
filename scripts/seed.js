@@ -1,6 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const bcrypt = require('bcryptjs');
-const prisma = new PrismaClient();
 
 async function main() {
     console.log("Iniciando llenado de la base de datos (Seeding)...");
@@ -40,21 +39,21 @@ async function main() {
     console.log("✅ Vendedor creado: vendedor@4fun.com / 123456");
 
     // 3. Crear Producto Base (Catálogo Maestro)
-    const platform = await prisma.platform.create({ data: { name: 'PC', imageId: 'pc' } });
-    const genre = await prisma.genre.create({ data: { name: 'Acción', imageId: 'accion' } });
+    const platform = await prisma.platform.create({ data: { nombre: 'PC', slug: 'pc', imageId: 'pc' } });
+    const genre = await prisma.genre.create({ data: { nombre: 'Acción', slug: 'accion', imageId: 'accion' } });
 
     const game = await prisma.product.create({
         data: {
-            name: 'Elden Ring',
-            description: 'Un mundo abierto increíble creado por Hidetaka Miyazaki y George R.R. Martin.',
+            nombre: 'Elden Ring',
+            descripcion: 'Un mundo abierto increíble creado por Hidetaka Miyazaki y George R.R. Martin.',
             tipo: 'Digital',
             platformId: platform.id,
             genreId: genre.id,
-            price: 50.00,
+            precio: 50.00,
             stock: 0,
-            minPrice: 50.00,
-            developer: 'FromSoftware',
-            imageId: 'https://placehold.co/600x800/222/FFF?text=Elden+Ring'
+            fechaLanzamiento: new Date('2022-02-25'),
+            desarrollador: 'FromSoftware',
+            imagenUrl: 'https://placehold.co/600x800/222/FFF?text=Elden+Ring'
         }
     });
     console.log("✅ Producto Base creado: Elden Ring");
@@ -64,9 +63,9 @@ async function main() {
         data: {
             productId: game.id,
             sellerId: seller.id,
-            price: 45.00,
+            precio: 45.00,
             stock: 10,
-            active: true
+            activo: true
         }
     });
     console.log("✅ Oferta creada: Elden Ring por $45.00 (Vendedor Pro)");
@@ -74,7 +73,7 @@ async function main() {
     // 5. Actualizar el caché del producto
     await prisma.product.update({
         where: { id: game.id },
-        data: { minPrice: 45.00, stock: 10 }
+        data: { stock: 10 }
     });
 
     console.log("🎉 Seeding finalizado con éxito.");
