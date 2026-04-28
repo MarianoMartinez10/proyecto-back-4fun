@@ -4,6 +4,17 @@ const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
 /**
+ * Patrón GoF: Strategy — Registro de Estrategias de Precios
+ * --------------------------------------------------------------------------
+ * Importamos el registro central de estrategias. `resolveStrategy` es la
+ * función de despacho que, dado el campo `tipo` del modelo Prisma,
+ * retorna la instancia de ConcreteStrategy correspondiente (Physical/Digital).
+ * GoF §Strategy — Consecuencia: elimina los condicionales dispersos en el
+ * contexto y los encapsula en clases intercambiables.
+ */
+const { resolveStrategy } = require('./strategies');
+
+/**
  * Capa de Servicios: Catálogo de Productos (Dominio)
  * --------------------------------------------------------------------------
  * Orquesta la lógica fundamental de la mercadería. Implementa patrones de
@@ -17,6 +28,7 @@ const PRODUCT_INCLUDE = {
     platform: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
     genre: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
     _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE' } } } },
+    reviews: { select: { rating: true } }
 };
 
 class ProductService extends BaseService {
@@ -61,21 +73,35 @@ class ProductService extends BaseService {
 
     /**
      * Mapper estático para reutilización en servicios adyacentes (Cart/Wishlist).
-     * RN (Cálculo de Precios): Procesa descuentos por tiempo limitado en tiempo real.
+     * --------------------------------------------------------------------------
+     * Patrón GoF: Strategy — Contexto (Context Role).
+     * En lugar de calcular precio y stock con `if/else` según el tipo de producto,
+     * delega ambas responsabilidades a la ConcreteStrategy correspondiente.
+     *
+     * Consecuencia GoF §Strategy — EXTENSIBILIDAD:
+     *   "Encapsulating the behavior in separate Strategy classes eliminates these
+     *    conditional statements." (Design Patterns, GoF §5)
+     * → Agregar un tipo 'Subscription' solo requiere:
+     *   1. Crear `SubscriptionStrategy extends PricingStrategy`.
+     *   2. Registrarlo en `strategies/index.js`.
+     *   Sin modificar esta función.
      */
     static productToDTO(p) {
         if (!p) return null;
 
-        // RN - Promociones: Un descuento solo es válido si el % > 0 y no ha expirado la fecha fin.
-        const discountActive = p.descuentoPorcentaje > 0 &&
-            (!p.descuentoFechaFin || new Date(p.descuentoFechaFin) > new Date());
-        
-        const discountPercentage = discountActive ? p.descuentoPorcentaje : 0;
-        
-        // RN - Precisión Financiera: El precio final se calcula aplicando el factor de descuento.
-        const finalPrice = discountActive
-            ? Number((Number(p.precio) * (1 - p.descuentoPorcentaje / 100)).toFixed(2))
-            : Number(p.precio);
+        /**
+         * Patrón GoF: Strategy — Resolución de Estrategia en Tiempo de Ejecución.
+         * `resolveStrategy` actúa como el despacho que conecta el campo `tipo`
+         * (string de Prisma) con la instancia de ConcreteStrategy adecuada.
+         * GoF §Strategy — Participant: Context delegates to Strategy object.
+         */
+        const strategy = resolveStrategy(p.tipo);
+
+        // Delegación al ConcreteStrategy: cálculo de precio con descuento.
+        const { finalPrice, discountPercentage } = strategy.calculatePrice(p);
+
+        // Delegación al ConcreteStrategy: cálculo de stock por tipología.
+        const stock = strategy.calculateStock(p);
 
         return {
             id: p.id,
@@ -105,9 +131,10 @@ class ProductService extends BaseService {
             developer: p.desarrollador,
             imageId: p.imagenUrl || 'https://placehold.co/600x400?text=Sin+Imagen',
             trailerUrl: p.trailerUrl || '',
-            rating: Number(p.calificacion),
-            // RN - Disponibilidad Digital: Si es Digital, el stock real es el conteo de Keys disponibles en BDD.
-            stock: p.tipo === 'Digital' ? (p._count?.digitalKeys ?? p.stock) : p.stock,
+            // RN: El rating se deriva dinámicamente de p.reviews si está disponible
+            rating: p.reviews?.length ? Number((p.reviews.reduce((acc, curr) => acc + curr.rating, 0) / p.reviews.length).toFixed(1)) : 0,
+            // RN (Stock): Calculado por la ConcreteStrategy según tipología de producto.
+            stock,
             active: p.activo,
             specPreset: p.specPreset,
             requirements: p.requirements
@@ -408,12 +435,25 @@ class ProductService extends BaseService {
         const product = await prisma.product.findUnique({ where: { id } });
         if (!product) throw new ErrorResponse('Producto no encontrado', 404);
         
+        // RN - Integridad Composite (Patrón GoF): Antes de desactivar el producto,
+        // limpiamos sus relaciones en BundleItem para evitar huérfanos.
+        // Esto asegura que el árbol del Composite no quede en estado inconsistente.
+        await prisma.bundleItem.deleteMany({
+            where: { OR: [{ bundleId: id }, { productId: id }] }
+        }).catch(() => {}); // catch silencioso: si la tabla no existe aún, no bloqueamos
+        
         // RN - Integridad Histórica: El producto no se borra (SQL DELETE), se desactiva.
         await prisma.product.update({ where: { id }, data: { activo: false } });
+        logger.warn(`[ProductService] Producto dado de baja lógica: ${id}`);
         return true;
     }
 
     async deleteProducts(ids) {
+        // Limpieza de relaciones Bundle antes de la desactivación masiva
+        await prisma.bundleItem.deleteMany({
+            where: { OR: [{ bundleId: { in: ids } }, { productId: { in: ids } }] }
+        }).catch(() => {});
+
         return await prisma.product.updateMany({
             where: { id: { in: ids } },
             data: { activo: false }
@@ -438,7 +478,7 @@ class ProductService extends BaseService {
         }
 
         // Fast-path: Admin tiene acceso global
-        if (userRole === 'admin') {
+        if (userRole === 'ADMIN') {
             return { valid: true };
         }
 

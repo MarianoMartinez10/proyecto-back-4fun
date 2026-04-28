@@ -404,7 +404,7 @@ class TransactionService {
 
         // Validación: Solo seller, admin o el usuario que compró pueden ver
         const canView =
-            userRole === 'admin' ||
+            userRole === 'ADMIN' ||
             transaction.sellerId === userId ||
             transaction.order?.userId === userId;
 

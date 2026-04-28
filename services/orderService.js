@@ -1,15 +1,29 @@
 /**
  * Capa de Servicios: Facturación y Órdenes Core
  * --------------------------------------------------------------------------
- * Eje principal del flujo financiero (Checkout Pipeline). Abstrae complejas 
+ * Eje principal del flujo financiero (Checkout Pipeline). Abstrae complejas
  * inserciones multifamiliares y control cruzado lógico de base de datos.
+ *
+ * Patrón GoF: Observer — Integración del Subject
+ * --------------------------------------------------------------------------
+ * Este servicio actúa como productor de eventos (Subject indirecto).
+ * Al completarse un pago, no llama directamente a EmailService ni a ningún
+ * otro canal de notificación. En su lugar, emite un evento al `OrderEventBus`
+ * (Subject GoF), quien distribuye la notificación a todos los observers
+ * suscritos (Email, Auditoría, SMS futuro, etc.).
+ *
+ * Consecuencia GoF §Observer — FLEXIBILIDAD:
+ *   "The subject doesn't know how many objects depend on it. Adding new
+ *    notification channels (SMS, Push) requires zero changes to this service."
+ *   (Design Patterns, GoF §5 — Observer: Consequences)
  */
 
-const prisma = require('../lib/prisma');
-const EmailService = require('./emailService');
+const prisma          = require('../lib/prisma');
+const orderEventBus   = require('./observers/OrderEventBus');
+const ProductComponentFactory = require('./composite/ProductComponentFactory');
 const { DEFAULT_IMAGE } = require('../utils/constants');
-const logger = require('../utils/logger');
-const ErrorResponse = require('../utils/errorResponse');
+const logger          = require('../utils/logger');
+const ErrorResponse   = require('../utils/errorResponse');
 
 class OrderService {
 
@@ -45,12 +59,15 @@ class OrderService {
                 if (product.stock < item.quantity) throw new ErrorResponse(`Stock insuficiente para: ${product.nombre}`, 400);
             }
 
-            calculatedTotal += Number(product.precio) * item.quantity;
+            const component = ProductComponentFactory.create(product);
+            const componentPrice = component.getPrice();
+
+            calculatedTotal += componentPrice * item.quantity;
             validatedItems.push({
                 id: product.id,
                 title: item.name,
                 quantity: Number(item.quantity),
-                unit_price: Number(product.precio), // Precio auditado y sellado.
+                unit_price: componentPrice, // Precio calculado vía polimorfismo
                 currency_id: 'ARS',
                 picture_url: item.image || undefined,
                 description: product.descripcion?.substring(0, 200) || '',
@@ -64,13 +81,13 @@ class OrderService {
             if (item.tipo !== 'Digital') {
                 const updated = await prisma.product.updateMany({
                     where: { id: item.id, stock: { gte: item.quantity } },
-                    data: { stock: { decrement: item.quantity }, cantidadVendida: { increment: item.quantity } }
+                    data: { stock: { decrement: item.quantity } }
                 });
                 if (updated.count === 0) {
                     // Compensatory Action (Sudo Rollback manual)
                     for (const prev of validatedItems) {
                         if (prev.id === item.id) break;
-                        await prisma.product.update({ where: { id: prev.id }, data: { stock: { increment: prev.quantity }, cantidadVendida: { decrement: prev.quantity } } });
+                        await prisma.product.update({ where: { id: prev.id }, data: { stock: { increment: prev.quantity } } });
                     }
                     throw new ErrorResponse(`Stock agotado para: ${item.title}.`, 409);
                 }
@@ -82,7 +99,6 @@ class OrderService {
             data: {
                 userId: user.id || user._id?.toString() || user,
                 paymentMethod: paymentMethod || 'mercadopago',
-                itemsPrice: calculatedTotal,
                 shippingPrice: 0,
                 totalPrice: calculatedTotal,
                 orderStatus: 'pending',
@@ -152,7 +168,7 @@ class OrderService {
         if (!order) throw new ErrorResponse('Orden no encontrada', 404);
         
         // RN Permisos (Tenencia): Inquisita pertenencia local vs rol piramidal.
-        if (order.userId !== userId && userRole !== 'admin') throw new ErrorResponse('No autorizado para ver esta orden', 403);
+        if (order.userId !== userId && userRole !== 'ADMIN') throw new ErrorResponse('No autorizado para ver esta orden', 403);
         
         return { 
             ...order, 
@@ -333,27 +349,20 @@ class OrderService {
         const paidOrder = paymentResult?.paidOrder;
         const shouldSendKeysEmail = !order.isPaid || (paymentResult?.assignedKeysCount || 0) > 0;
 
-        if (shouldSendKeysEmail && paidOrder?.user?.email && (paidOrder.digitalKeys?.length || 0) > 0) {
-            try {
-                const emailResult = await EmailService.sendDigitalProductDelivery(
-                    paidOrder.user,
-                    { ...paidOrder, _id: paidOrder.id },
-                    paidOrder.digitalKeys
-                );
-
-                if (!emailResult?.success) {
-                    logger.warn('[OrderService] Orden pagada pero el envio de email de keys no fue exitoso', {
-                        orderId,
-                        reason: emailResult?.message || 'motivo desconocido'
-                    });
-                }
-            } catch (emailError) {
-                logger.error('[OrderService] Error enviando keys por email tras marcar pago', {
-                    orderId,
-                    error: emailError.message
-                });
-            }
-        }
+        /**
+         * Patrón GoF: Observer — Emisión del Evento al Subject.
+         * En lugar de llamar directamente a EmailService (acoplamiento rígido),
+         * emitimos un evento al bus. Cada ConcreteObserver suscrito reaccionará
+         * de forma independiente y aislada a sus propios fallos.
+         *
+         * GoF §Observer — Subject.notify(): "Notifies its observers when its
+         * state changes." El 'estado' que cambió es: la orden fue pagada.
+         */
+        await orderEventBus.notify('order:paid', {
+            order:       paidOrder,
+            digitalKeys: paidOrder?.digitalKeys || [],
+            meta:        { shouldSendKeysEmail }
+        });
 
         return {
             ...(paidOrder || order),

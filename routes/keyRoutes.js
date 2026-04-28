@@ -15,7 +15,7 @@ const router = express.Router();
  */
 
 router.use(protect);
-router.use(authorize('admin', 'seller'));
+router.use(authorize('ADMIN', 'SELLER'));
 
 /** @route POST /api/keys/bulk - Carga masiva de licencias para un producto específico. */
 router.post('/bulk', addKeys);

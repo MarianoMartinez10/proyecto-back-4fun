@@ -14,7 +14,7 @@ const { protect, authorize } = require('../middlewares/auth');
  */
 
 router.use(protect);
-router.use(authorize('admin'));
+router.use(authorize('ADMIN'));
 
 /**
  * Operaciones Masivas y de Listado

@@ -264,8 +264,8 @@ class AuthService {
 
         // RN: Si el usuario es ADMIN, no debe perder su rango ni requerir aprobación.
         const currentUser = await prisma.user.findUnique({ where: { id: userId } });
-        const shouldBeApproved = currentUser.role === 'admin';
-        const finalRole = currentUser.role === 'admin' ? 'admin' : 'seller';
+        const shouldBeApproved = currentUser.role === 'ADMIN';
+        const finalRole = currentUser.role === 'ADMIN' ? 'ADMIN' : 'SELLER';
 
         // Operación Atómica (3FN): Actualiza rol y crea/actualiza perfil en una sola transacción.
         const user = await prisma.user.update({

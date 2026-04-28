@@ -34,49 +34,51 @@ const errorHandler = (err, req, res, next) => {
   });
 
   let statusCode = err.statusCode || 500;
-  let message = err.message || 'Error interno del servidor';
-  let errors = undefined;
+  let title = err.name || 'Error del Servidor';
+  let message = err.message || 'Ocurrió un error inesperado en el sistema.';
+  let details = undefined;
 
-  // --- Mapeos de Excepciones del ORM (Prisma) ---
+  // --- Mapeos de Excepciones del ORM (Prisma / Persistencia) ---
 
-  // Prisma: Unique constraint violation (RN: Impide duplicación de emails/identificadores)
-  if (err.code === 'P2002') {
-    statusCode = 409;
-    const field = err.meta?.target?.[0] || 'campo';
-    message = `El valor del campo '${field}' ya existe`;
+  // 1. Fallos de Conexión (UTN: Robustez - Error 503 Service Unavailable)
+  const connectionErrors = ['P1001', 'P1008', 'P1017'];
+  if (connectionErrors.includes(err.code)) {
+    statusCode = 503;
+    title = 'Servicio No Disponible';
+    message = 'No se pudo establecer conexión con la base de datos. Intente nuevamente en unos minutos.';
   }
-  // Prisma: Record not found (Maneja dependencias inexistentes, ej: buscar usuario fantasma)
+  // 2. Violación de Restricción Única (RN: Datos duplicados)
+  else if (err.code === 'P2002') {
+    statusCode = 400; // Cambiado a 400 para simplificar validación en front
+    title = 'Conflicto de Datos';
+    const field = err.meta?.target?.[0] || 'campo';
+    message = `Ya existe un registro con ese valor en el campo: ${field}.`;
+  }
+  // 3. Registro No Encontrado
   else if (err.code === 'P2025') {
     statusCode = 404;
-    message = err.meta?.cause || 'Registro no encontrado';
+    title = 'No Encontrado';
+    message = err.meta?.cause || 'El recurso solicitado no existe en la base de datos.';
   }
-  // Prisma: Foreign key constraint failed (RN de Integridad Referencial de BDD)
+  // 4. Fallo de Integridad Referencial
   else if (err.code === 'P2003') {
     statusCode = 400;
-    const field = err.meta?.field_name || 'referencia';
-    message = `Referencia inválida: el registro vinculado en '${field}' no existe`;
+    title = 'Error de Integridad';
+    message = 'No se puede completar la operación debido a una referencia inválida entre entidades.';
   }
-  // Prisma: Invalid input value (Tipos de datos erróneos insertos al motor DB)
-  else if (err.code === 'P2006') {
-    statusCode = 400;
-    message = `Valor inválido para el campo: ${err.meta?.field_name || 'desconocido'}`;
-  }
-  // Express-validator (Retrocompatibilidad para mapeo de validaciones de Middleware)
-  else if (err.name === 'ValidationError' && err.errors) {
-    statusCode = 400;
-    errors = Object.values(err.errors).map(e => e.message);
-    message = errors.length > 0 ? errors.join('. ') : 'Error de validación de datos';
+  // 5. Errores de Validación de Dominio (Custom ErrorResponse)
+  else if (err.name === 'ErrorResponse') {
+    title = 'Validación de Negocio';
   }
 
-  // Se omite el stacktrace en producción por políticas de seguridad de la arquitectura.
+  // --- Contrato de Error Unificado (UTN: Bridge Backend-Frontend) ---
+  // Estructura exigida: { error: str, message: str, code: int }
   res.status(statusCode).json({
     success: false,
-    error: {
-      type: err.name || 'Error',
-      message: message,
-      details: errors,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    },
+    error: title,
+    message: message,
+    code: statusCode, // Usamos el status code HTTP como código de error base
+    internalCode: err.code || undefined, // Código interno de Prisma opcional
     timestamp: new Date().toISOString()
   });
 };

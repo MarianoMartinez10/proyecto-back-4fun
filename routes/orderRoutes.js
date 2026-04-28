@@ -32,12 +32,12 @@ router.get('/:id', protect, getOrder);
 // ─── GESTIÓN ADMINISTRATIVA (RESTRICTED) ───
 
 /** @route GET /api/orders - Panel de control masivo de transacciones. */
-router.get('/', protect, authorize('admin'), getAllOrders);
+router.get('/', protect, authorize('ADMIN'), getAllOrders);
 
 /** @route PUT /api/orders/:id/pay - Forzado manual de estado 'Pagado' (Auditoría). */
-router.put('/:id/pay', protect, authorize('admin'), updateOrderToPaid);
+router.put('/:id/pay', protect, authorize('ADMIN'), updateOrderToPaid);
 
 /** @route PATCH /api/orders/:id/status - Mutación de estados logísticos (Processing/Delivered). */
-router.patch('/:id/status', protect, authorize('admin'), updateOrderStatus);
+router.patch('/:id/status', protect, authorize('ADMIN'), updateOrderStatus);
 
 module.exports = router;

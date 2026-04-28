@@ -28,36 +28,36 @@ const verifyProductOwnership = require('../middlewares/verifyProductOwnership');
 router.get('/', getProducts);
 
 /** @route GET /api/products/admin - Listado administrativo global (Admin Only). */
-router.get('/admin', protect, authorize('admin'), getProductsAdmin);
+router.get('/admin', protect, authorize('ADMIN'), getProductsAdmin);
 
 /** @route GET /api/products/seller/me - Listado de productos de autoría propia (Seller Only). */
-router.get('/seller/me', protect, authorize('seller', 'admin'), getSellerProducts);
+router.get('/seller/me', protect, authorize('SELLER', 'ADMIN'), getSellerProducts);
 
 /** @route GET /api/products/admin/:id - Vista administrativa de detalle (incluye inactivos). */
-router.get('/admin/:id', protect, authorize('admin'), getProductAdmin);
+router.get('/admin/:id', protect, authorize('ADMIN'), getProductAdmin);
 
 /** @route GET /api/products/:id - Vista de detalle de artículo (Pública). */
 router.get('/:id', getProduct);
 
 /** @route GET /api/products/:id/management - Vista de detalle para gestión (Solo Dueño o Admin). */
-router.get('/:id/management', protect, authorize('admin', 'seller'), verifyProductOwnership, getProduct);
+router.get('/:id/management', protect, authorize('ADMIN', 'SELLER'), verifyProductOwnership, getProduct);
 
 
 // ─── GESTIÓN DE INVENTARIO (ADMIN & SELLER) ───
 
 /** @route POST /api/products - Alta de nuevo producto (Asociado al usuario activo). */
-router.post('/', protect, authorize('admin', 'seller'), createProduct);
+router.post('/', protect, authorize('ADMIN', 'SELLER'), createProduct);
 
 /** @route PUT /api/products/:id/reorder - Mutación de posición visual (Ranking Escaparate). */
-router.put('/:id/reorder', protect, authorize('admin'), reorderProduct);
+router.put('/:id/reorder', protect, authorize('ADMIN'), reorderProduct);
 
 /** @route PUT /api/products/:id - Edición integral de ficha de producto (con validación de propiedad). */
-router.put('/:id', protect, authorize('admin', 'seller'), verifyProductOwnership, updateProduct);
+router.put('/:id', protect, authorize('ADMIN', 'SELLER'), verifyProductOwnership, updateProduct);
 
 /** @route DELETE /api/products/multi - Desactivación masiva de catálogo (validada en controlador). */
-router.delete('/multi', protect, authorize('admin', 'seller'), deleteProducts);
+router.delete('/multi', protect, authorize('ADMIN', 'SELLER'), deleteProducts);
 
 /** @route DELETE /api/products/:id - Eliminación lógica (Soft Delete) individual (con validación de propiedad). */
-router.delete('/:id', protect, authorize('admin', 'seller'), verifyProductOwnership, deleteProduct);
+router.delete('/:id', protect, authorize('ADMIN', 'SELLER'), verifyProductOwnership, deleteProduct);
 
 module.exports = router;

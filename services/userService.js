@@ -100,8 +100,8 @@ class UserService extends BaseService {
         const { name, email, phone, address, role, isVerified, isApproved } = data;
 
         // RN - Seguridad / RBAC: Restringe la mutación de rol a valores válidos del dominio.
-        if (role !== undefined && !['buyer', 'seller', 'admin'].includes(role)) {
-            throw new ErrorResponse('Rol inválido. Valores permitidos: buyer, seller o admin.', 400);
+        if (role !== undefined && !['BUYER', 'SELLER', 'ADMIN'].includes(role)) {
+            throw new ErrorResponse('Rol inválido. Valores permitidos: BUYER, SELLER o ADMIN.', 400);
         }
         
         // Manejo de Excepciones: Verifica existencia antes de intentar la mutación.
@@ -121,8 +121,8 @@ class UserService extends BaseService {
                 ...(role !== undefined && { role }),
                 ...(isVerified !== undefined && { isVerified }),
                 // RN - Modelo Simplificado (Mercado Libre): El rol 'seller' implica aprobación.
-                // Si se activa el rol seller o isApproved es true, aseguramos que exista el perfil.
-                ...((role === 'seller' || isApproved === true) ? {
+                // Si se activa el rol SELLER o isApproved es true, aseguramos que exista el perfil.
+                ...((role === 'SELLER' || isApproved === true) ? {
                     sellerProfile: {
                         upsert: {
                             create: { 

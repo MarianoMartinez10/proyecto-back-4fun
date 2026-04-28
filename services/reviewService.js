@@ -51,8 +51,7 @@ class ReviewService {
             include: { user: { select: { id: true, name: true, avatar: true } } }
         });
 
-        // RN - Recalibración: Actualiza el promedio de estrellas global del producto raíz.
-        await this.updateProductRating(productId);
+        // RN - Recalibración: La calificación ahora se calcula al vuelo al consultar productos.
         
         return this.transformReview(review);
     }
@@ -156,24 +155,12 @@ class ReviewService {
         const productId = review.productId;
         await prisma.review.delete({ where: { id: reviewId } });
         
-        // Fuerza re-cálculo de calificacion media del producto tras la baja.
-        await this.updateProductRating(productId);
+        // RN - Recalibración: La calificación se calcula en runtime.
         
         return { message: 'Contenido eliminado exitosamente' };
     }
 
-    /**
-     * Agregador matemático del rating total.
-     * Mantenibilidad: Centraliza el recuento para asegurar consistencia en el catálogo.
-     */
-    async updateProductRating(productId) {
-        const reviews = await prisma.review.findMany({ where: { productId }, select: { rating: true } });
-        const avg = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
-        await prisma.product.update({
-            where: { id: productId },
-            data: { calificacion: Math.round(avg * 10) / 10 }
-        });
-    }
+
 
     /**
      * Mapeador DTO para privacidad y formato.

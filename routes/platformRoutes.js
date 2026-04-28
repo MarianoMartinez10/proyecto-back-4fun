@@ -22,15 +22,15 @@ router.get('/:id', getPlatform);
 // ─── GESTIÓN ADMINISTRATIVA ───
 
 /** @route POST /api/platforms - Registro de nuevo soporte de hardware. */
-router.post('/', protect, authorize('admin'), createPlatform);
+router.post('/', protect, authorize('ADMIN'), createPlatform);
 
 /** @route PUT /api/platforms/:id - Actualización de metadatos o imagotipo. */
-router.put('/:id', protect, authorize('admin'), updatePlatform);
+router.put('/:id', protect, authorize('ADMIN'), updatePlatform);
 
 /** @route DELETE /api/platforms/multi - Depuración masiva de taxonomías. */
-router.delete('/multi', protect, authorize('admin'), deletePlatforms);
+router.delete('/multi', protect, authorize('ADMIN'), deletePlatforms);
 
 /** @route DELETE /api/platforms/:id - Baja lógica de una plataforma. */
-router.delete('/:id', protect, authorize('admin'), deletePlatform);
+router.delete('/:id', protect, authorize('ADMIN'), deletePlatform);
 
 module.exports = router;

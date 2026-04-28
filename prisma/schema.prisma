@@ -1,3 +1,11 @@
+// =============================================================================
+// 4FUN STORE — Schema Prisma v2.0 (Reestructuración 3NF)
+// =============================================================================
+// Normalización: Connolly "Database Systems" + UTN-FRT Guía 3FN
+// Patrones:      Composite (Bundles) + Strategy (Precios)
+// Fecha:         2026-04-28
+// =============================================================================
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,38 +14,116 @@ datasource db {
   provider = "postgresql"
 }
 
-// ── Entidades de Referencia ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS — Dominios cerrados (Integridad de datos)
+// ─────────────────────────────────────────────────────────────────────────────
 
+/// Roles del sistema — RBAC
+enum Role {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+/// Tipo de producto (digital vs físico)
+enum ProductType {
+  DIGITAL
+  PHYSICAL
+}
+
+/// Preset de requerimientos técnicos para software
+enum SpecPreset {
+  LOW
+  MID
+  HIGH
+}
+
+/// Tipo de requerimiento de sistema (antes String libre → ahora Enum cerrado)
+enum RequirementType {
+  MINIMUM
+  RECOMMENDED
+}
+
+/// Estado del pedido
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+/// Método de pago (antes String libre → ahora Enum cerrado)
+enum PaymentMethod {
+  MERCADOPAGO
+  TRANSFER
+  CASH
+}
+
+/// Estado de clave digital
+enum KeyStatus {
+  AVAILABLE
+  SOLD
+  RESERVED
+}
+
+/// Estado de transacción (sistema escrow)
+enum TransactionStatus {
+  PENDING_APPROVAL   // Dinero retenido, pendiente de aprobación del admin
+  FUNDS_RELEASED     // Admin aprobó, dinero transferido al vendedor
+  REJECTED           // Admin rechazó, dinero devuelto al cliente
+  CANCELLED          // Transacción cancelada
+}
+
+/// Tipo de descuento (cupones)
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENTIDADES DE REFERENCIA (Tablas Maestras)
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: Cada entidad representa una única entidad conceptual.
+//       Todos los atributos dependen funcionalmente de la PK.
+
+/// Plataforma de software (PC, PlayStation, Xbox, Nintendo, etc.)
 model Platform {
   id        String    @id @default(uuid())
   slug      String    @unique
-  nombre    String
-  activo    Boolean   @default(true)
-  imageId   String?
+  name      String
+  isActive  Boolean   @default(true)
+  imageUrl  String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  products  Product[]
+
+  // Relaciones
+  products Product[]
 }
 
+/// Género/Categoría del producto (Acción, RPG, Aventura, etc.)
 model Genre {
   id        String    @id @default(uuid())
   slug      String    @unique
-  nombre    String
-  activo    Boolean   @default(true)
-  imageId   String?
+  name      String
+  isActive  Boolean   @default(true)
+  imageUrl  String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  products  Product[]
+
+  // Relaciones
+  products Product[]
 }
 
-// ── Usuario ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// USUARIO Y PERFIL DE VENDEDOR
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: SellerProfile evita campos nullables en User para datos exclusivos
+//      del rol SELLER (dependencia funcional: sellerId → storeName, bankAccount).
+//      Sin SellerProfile, habría anomalía de inserción: no se puede crear un
+//      BUYER sin forzar campos de vendedor en NULL.
 
-enum Role {
-  buyer
-  seller
-  admin
-}
-
+/// Usuario del sistema
 model User {
   id                   String    @id @default(uuid())
   name                 String
@@ -46,143 +132,207 @@ model User {
   avatar               String?
   phone                String?
   address              String?
-  role                 Role      @default(buyer)
+  role                 Role      @default(BUYER)
   isVerified           Boolean   @default(false)
-  activo               Boolean   @default(true)
+  isActive             Boolean   @default(true)
   verificationToken    String?
   verificationTokenExp DateTime?
   resetPasswordToken   String?
   resetPasswordExp     DateTime?
   createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  // Relaciones Multi-Rol (3FN)
-  sellerProfile SellerProfile?
-  products      Product[]      @relation("SellerProducts")
-  orders        Order[]
-  cart          Cart?
-  wishlist     Wishlist?
-  reviews      Review[]
-  helpfulVotes ReviewHelpfulVote[]
-  
-  // Transacciones como vendedor y como admin aprobador
-  sellerTransactions Transaction[] @relation("SellerTransactions")
-  adminApprovals     Transaction[] @relation("AdminApprovals")
+  // ── Relaciones ──
+  sellerProfile      SellerProfile?
+  products           Product[]           @relation("SellerProducts")
+  orders             Order[]
+  cart               Cart?
+  wishlist           Wishlist?
+  reviews            Review[]
+  helpfulVotes       ReviewHelpfulVote[]
+  sellerTransactions Transaction[]       @relation("SellerTransactions")
+  adminApprovals     Transaction[]       @relation("AdminApprovals")
+
+  @@index([email])
+  @@index([role])
 }
 
-// Modelo de Extensión para Vendedores (3FN - Evita Nulls innecesarios en User)
+/// Perfil extendido para vendedores (3NF — evita NULLs en User)
 model SellerProfile {
-  id             String   @id @default(uuid())
-  userId         String   @unique
-  storeName      String   @unique
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  storeName        String   @unique
   storeDescription String?
-  bankAccount    String?
-  taxId          String?  // Ej: CUIT/CUIL
-  isApproved     Boolean  @default(false) // El Admin debe aprobar al vendedor
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  bankAccount      String?
+  taxId            String?     // CUIT/CUIL
+  isApproved       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ── Producto ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PRODUCTO (Patrón Composite: Hoja + Contenedor)
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: Cada atributo depende funcionalmente solo del productId.
+//
+// Patrón Composite (GoF): Un Product puede ser:
+//   - Hoja:       isBundle = false → producto individual
+//   - Contenedor: isBundle = true  → bundle que agrupa otros productos
+//
+// Patrón Strategy (GoF): El precio es la estrategia intercambiable:
+//   - Product.price           → PrecioBase (actual, mutable por el vendedor)
+//   - Product.discountPercent → EstrategiaDescuento (temporal)
+//   - OrderItem.unitPriceAtPurchase → PrecioCongelado (snapshot inmutable)
+//
+// CAMPOS ELIMINADOS (3NF — datos derivables):
+//   - calificacion:    AVG(Review.rating)    → calcular en runtime
+//   - cantidadVendida: SUM(OrderItem.quantity) → calcular en runtime
 
-enum ProductType {
-  Digital
-  Fisico
-}
-
-enum SpecPreset {
-  Low
-  Mid
-  High
-}
-
+/// Producto de software (hoja o bundle según Composite)
 model Product {
-  id                  String      @id @default(uuid())
-  nombre              String
-  descripcion         String
-  precio              Decimal     @db.Decimal(10, 2)
-  platformId          String
-  genreId             String
-  tipo                ProductType
-  fechaLanzamiento    DateTime
-  desarrollador       String
-  imagenUrl           String      @default("https://placehold.co/600x400?text=No+Image")
-  trailerUrl          String?
-  calificacion        Decimal     @default(0) @db.Decimal(3, 2)
-  stock               Int         @default(0)
-  cantidadVendida     Int         @default(0)
-  activo              Boolean     @default(true)
-  specPreset          SpecPreset?
-  descuentoPorcentaje Int         @default(0)
-  descuentoFechaFin   DateTime?
-  orden               Int         @default(0)
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  id               String      @id @default(uuid())
+  name             String
+  description      String
+  price            Decimal     @db.Decimal(10, 2)
+  type             ProductType
+  releaseDate      DateTime
+  developer        String
+  imageUrl         String      @default("https://placehold.co/600x400?text=No+Image")
+  trailerUrl       String?
+  stock            Int         @default(0)
+  isActive         Boolean     @default(true)
+  specPreset       SpecPreset?
+  discountPercent  Int         @default(0)     // Strategy: descuento temporal (%)
+  discountEndDate  DateTime?                   // Strategy: vigencia del descuento
+  displayOrder     Int         @default(0)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
-  // Auditoría y Propiedad (3FN)
-  sellerId      String?      // Nullable temporalmente para migración de datos existentes
-  seller        User?        @relation("SellerProducts", fields: [sellerId], references: [id])
+  // ── Composite: discriminador hoja/contenedor ──
+  isBundle Boolean @default(false)
 
-  platform      Platform             @relation(fields: [platformId], references: [id])
-  genre         Genre                @relation(fields: [genreId], references: [id])
-  requirements  ProductRequirement[]
-  orderItems    OrderItem[]
-  cartItems     CartItem[]
+  // ── Composite: relaciones de composición (M:N auto-referenciada) ──
+  bundleChildren BundleItem[] @relation("BundleToItems")  // Items que componen este bundle
+  bundleParents  BundleItem[] @relation("ItemToBundles")   // Bundles que contienen este item
+
+  // ── FK obligatorias (3NF: todo producto DEBE tener vendedor y clasificación) ──
+  sellerId   String
+  platformId String
+  genreId    String
+
+  seller   User     @relation("SellerProducts", fields: [sellerId], references: [id])
+  platform Platform @relation(fields: [platformId], references: [id])
+  genre    Genre    @relation(fields: [genreId], references: [id])
+
+  // ── Relaciones dependientes ──
+  requirements ProductRequirement[]
+  orderItems   OrderItem[]
+  cartItems    CartItem[]
   wishlistItems WishlistItem[]
-  reviews       Review[]
-  digitalKeys   DigitalKey[]
+  reviews      Review[]
+  digitalKeys  DigitalKey[]
 
-  @@index([activo, orden])
-  @@index([activo, platformId])
-  @@index([activo, genreId])
-  @@index([activo, createdAt])
+  @@index([isActive, displayOrder])
+  @@index([isActive, platformId])
+  @@index([isActive, genreId])
+  @@index([isActive, createdAt])
+  @@index([sellerId])
+  @@index([isBundle])
 }
 
-// Normalización de "requisitos: Mixed" → tabla propia (3NF)
+/// Requerimientos técnicos del producto (3NF: tabla propia, sin JSON/Mixed)
 model ProductRequirement {
-  id        String  @id @default(uuid())
+  id        String          @id @default(uuid())
   productId String
-  tipo      String  // "minimum" | "recommended"
-  key       String  // "os", "processor", "memory", etc.
+  type      RequirementType // Enum cerrado (antes era String libre)
+  key       String          // "os", "processor", "memory", etc.
   value     String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
 }
 
-// ── Orden ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PATRÓN COMPOSITE — Tabla de Asociación para Bundles
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: Tabla de asociación pura. Cada atributo depende de la PK compuesta.
+//      No hay dependencias transitivas.
+//
+// Permite: Bundle --contiene--> [Producto A, Producto B, Producto C]
+//          Producto A --está en--> [Bundle 1, Bundle 2]
 
-enum OrderStatus {
-  pending
-  processing
-  shipped
-  delivered
-  cancelled
+/// Componente de un bundle (tabla asociación M:N)
+model BundleItem {
+  id        String   @id @default(uuid())
+  bundleId  String   // FK al Product que actúa como "Combo/Bundle"
+  productId String   // FK al Product contenido en el bundle
+  addedAt   DateTime @default(now())
+
+  bundle  Product @relation("BundleToItems", fields: [bundleId], references: [id], onDelete: Cascade)
+  product Product @relation("ItemToBundles", fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([bundleId, productId])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ÓRDENES Y ITEMS (Strategy: Snapshot de Precios)
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: Order contiene datos del pedido. OrderItem contiene cada línea.
+//      unitPriceAtPurchase es un SNAPSHOT (Strategy: PrecioCongelado)
+//      que preserva la integridad histórica del precio pagado.
+//
+// CAMPOS ELIMINADOS (3NF — datos derivables):
+//   - Order.itemsPrice: SUM(OrderItem.unitPriceAtPurchase * quantity)
+
+/// Orden de compra
 model Order {
-  id            String      @id @default(uuid())
+  id            String        @id @default(uuid())
   userId        String
-  paymentMethod String      @default("mercadopago")
-  externalId    String?     @unique
-  itemsPrice    Decimal     @db.Decimal(10, 2)
-  shippingPrice Decimal     @db.Decimal(10, 2)
-  totalPrice    Decimal     @db.Decimal(10, 2)
-  orderStatus   OrderStatus @default(pending)
-  isPaid        Boolean     @default(false)
+  paymentMethod PaymentMethod @default(MERCADOPAGO) // Enum cerrado
+  externalId    String?       @unique               // ID de pasarela de pago
+  shippingPrice Decimal       @db.Decimal(10, 2)
+  totalPrice    Decimal       @db.Decimal(10, 2)     // shippingPrice + SUM(items)
+  status        OrderStatus   @default(PENDING)
+  isPaid        Boolean       @default(false)
   paidAt        DateTime?
-  isDelivered   Boolean     @default(false)
+  isDelivered   Boolean       @default(false)
   deliveredAt   DateTime?
-  createdAt     DateTime    @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
+  // ── Relaciones ──
   user            User             @relation(fields: [userId], references: [id])
   shippingAddress ShippingAddress?
   payment         Payment?
-  transaction     Transaction?     // Relación 1:1 con transacción de escrow
+  transaction     Transaction?
   orderItems      OrderItem[]
   digitalKeys     DigitalKey[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
 }
 
-// Normalización de "datos de pago" → tabla propia (3NF)
+/// Línea de detalle de una orden (3NF: tabla intermedia Order ↔ Product)
+/// unitPriceAtPurchase = Snapshot inmutable del precio (Strategy: PrecioCongelado)
+model OrderItem {
+  id                  String  @id @default(uuid())
+  orderId             String
+  productId           String
+  quantity            Int
+  unitPriceAtPurchase Decimal @db.Decimal(10, 2) // ← SNAPSHOT del precio al momento de compra
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+/// Datos de pago normalizados (3NF: tabla propia, no embebidos en Order)
 model Payment {
   id            String   @id @default(uuid())
   orderId       String   @unique
@@ -192,177 +342,172 @@ model Payment {
   mpEmail       String?
   createdAt     DateTime @default(now())
 
-  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
-// Normalización de "shippingAddress: Object embebido" → tabla propia (3NF)
+/// Dirección de envío normalizada (3NF: tabla propia, no embebida en Order)
 model ShippingAddress {
-  id       String  @id @default(uuid())
-  orderId  String  @unique
+  id       String @id @default(uuid())
+  orderId  String @unique
   fullName String
   street   String
   city     String
   state    String?
   zip      String
   country  String
-  order    Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
-// Normalización del array "orderItems[]" → tabla intermedia (3NF)
-model OrderItem {
-  id                  String  @id @default(uuid())
-  orderId             String
-  productId           String
-  quantity            Int
-  unitPriceAtPurchase Decimal @default(0) @db.Decimal(10, 2)
-  order               Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product             Product @relation(fields: [productId], references: [id])
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// CARRITO Y LISTA DE DESEOS
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: Tablas intermedias (CartItem, WishlistItem) normalizan la relación M:N.
 
-// ── Carrito ───────────────────────────────────────────────────────────────────
-
+/// Carrito de compras (1:1 con User)
 model Cart {
   id        String     @id @default(uuid())
   userId    String     @unique
   updatedAt DateTime   @updatedAt
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items     CartItem[]
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
 }
 
-// Normalización del array "items[]" → tabla intermedia (3NF)
+/// Item del carrito (3NF: tabla intermedia Cart ↔ Product)
 model CartItem {
-  id        String  @id @default(uuid())
+  id        String @id @default(uuid())
   cartId    String
   productId String
-  quantity  Int     @default(1)
-  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int    @default(1)
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
 
   @@unique([cartId, productId])
 }
 
-// ── Lista de Deseos ───────────────────────────────────────────────────────────
-
+/// Lista de deseos (1:1 con User)
 model Wishlist {
   id     String         @id @default(uuid())
   userId String         @unique
-  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items  WishlistItem[]
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items WishlistItem[]
 }
 
-// Normalización del array "productos[]" → tabla intermedia (3NF)
+/// Item de la lista de deseos (3NF: tabla intermedia Wishlist ↔ Product)
 model WishlistItem {
-  id            String   @id @default(uuid())
-  wishlistId    String
-  productId     String
-  fechaAgregado DateTime @default(now())
-  wishlist      Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
-  product       Product  @relation(fields: [productId], references: [id])
+  id         String   @id @default(uuid())
+  wishlistId String
+  productId  String
+  addedAt    DateTime @default(now())
+
+  wishlist Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
 
   @@unique([wishlistId, productId])
 }
 
-// ── Reseñas ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// RESEÑAS
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: ReviewHelpfulVote normaliza la relación M:N (User ↔ Review).
 
+/// Reseña de un producto
 model Review {
-  id                String     @id @default(uuid())
-  userId            String
-  productId         String
-  rating            Int
-  title             String?
-  text              String
-  verified          Boolean    @default(false)
-  activo            Boolean    @default(true)
-  helpfulCount      Int        @default(0)
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  rating    Int      // 1-5
+  title     String?
+  text      String
+  verified  Boolean  @default(false) // Compra verificada
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user         User                @relation(fields: [userId], references: [id])
   product      Product             @relation(fields: [productId], references: [id])
   helpfulVotes ReviewHelpfulVote[]
 
   @@unique([userId, productId])
+  @@index([productId])
 }
 
-// Normalización del array "helpfulVoters[]" → tabla intermedia (3NF)
+/// Voto "útil" en una reseña (3NF: tabla intermedia Review ↔ User)
 model ReviewHelpfulVote {
   id       String @id @default(uuid())
   reviewId String
   userId   String
-  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  user     User   @relation(fields: [userId], references: [id])
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
 
   @@unique([reviewId, userId])
 }
 
-// ── Claves Digitales ──────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CLAVES DIGITALES
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: Cada clave digital es una entidad independiente vinculada a Product y Order.
 
-enum KeyStatus {
-  DISPONIBLE
-  VENDIDA
-  RESERVADA
-}
-
+/// Clave/licencia digital de un producto
 model DigitalKey {
-  id         String    @id @default(uuid())
-  productId  String
-  clave      String    @unique
-  estado     KeyStatus @default(DISPONIBLE)
-  activo     Boolean   @default(true)
-  orderId    String?
-  fechaVenta DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id        String    @id @default(uuid())
+  productId String
+  key       String    @unique
+  status    KeyStatus @default(AVAILABLE)
+  isActive  Boolean   @default(true)
+  orderId   String?
+  soldAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   product Product @relation(fields: [productId], references: [id])
   order   Order?  @relation(fields: [orderId], references: [id])
+
+  @@index([productId])
+  @@index([status])
 }
 
-// ── Transacciones (Sistema de Escrow) ──────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSACCIONES (Sistema Escrow)
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: Entidad independiente. Cada atributo depende solo de transactionId.
 
-enum TransactionStatus {
-  PENDING_APPROVAL  // Dinero retenido, pendiente de aprobación del admin
-  FUNDS_RELEASED    // Admin aprobó, dinero transferido al vendedor
-  REJECTED          // Admin rechazó, dinero devuelto al cliente
-  CANCELLED         // Transacción cancelada
-}
-
+/// Transacción de escrow (retención de fondos hasta aprobación admin)
 model Transaction {
-  id                String              @id @default(uuid())
-  orderId           String              @unique
-  order             Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  
-  sellerId          String
-  seller            User                @relation("SellerTransactions", fields: [sellerId], references: [id], onDelete: Cascade)
-  
-  amount            Decimal             @db.Decimal(10, 2)
-  status            TransactionStatus   @default(PENDING_APPROVAL)
-  
-  // Auditoría de aprobación
-  approvedBy        String?             // ID del admin que aprobó
-  approvalAdmin     User?               @relation("AdminApprovals", fields: [approvedBy], references: [id], onDelete: SetNull)
-  approvedAt        DateTime?
-  rejectionReason   String?             // Motivo del rechazo (si aplica)
-  
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id              String            @id @default(uuid())
+  orderId         String            @unique
+  sellerId        String
+  amount          Decimal           @db.Decimal(10, 2)
+  status          TransactionStatus @default(PENDING_APPROVAL)
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  order         Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seller        User  @relation("SellerTransactions", fields: [sellerId], references: [id], onDelete: Cascade)
+  approvalAdmin User? @relation("AdminApprovals", fields: [approvedBy], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([sellerId])
   @@index([createdAt])
 }
 
-// ── Cupones ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// CUPONES
+// ─────────────────────────────────────────────────────────────────────────────
+// 3NF: Entidad independiente. Todos los atributos dependen de couponId.
 
-enum DiscountType {
-  percentage
-  fixed
-}
-
+/// Cupón de descuento
 model Coupon {
   id           String       @id @default(uuid())
   code         String       @unique
-  discountType DiscountType @default(percentage)
+  discountType DiscountType @default(PERCENTAGE)
   value        Decimal      @db.Decimal(10, 2)
   minPurchase  Decimal      @default(0) @db.Decimal(10, 2)
   usageLimit   Int?
