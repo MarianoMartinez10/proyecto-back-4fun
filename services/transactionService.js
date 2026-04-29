@@ -127,6 +127,30 @@ class TransactionService {
             );
         }
 
+        // RN - Ventana de Disputa: El dinero solo puede liberarse tras X días de la compra.
+        // Esto permite al comprador reportar problemas con las keys antes de que el vendedor reciba el dinero.
+        const disputeWindowDays = process.env.DISPUTE_WINDOW_DAYS || 7;
+        const paidAt = transaction.order.paidAt;
+        if (!paidAt) throw new ErrorResponse('La orden asociada no registra fecha de pago.', 400);
+        
+        const releaseAvailableAt = new Date(paidAt);
+        releaseAvailableAt.setDate(releaseAvailableAt.getDate() + Number(disputeWindowDays));
+        
+        if (new Date() < releaseAvailableAt) {
+            throw new ErrorResponse(`Ventana de disputa activa. Los fondos podrán liberarse a partir del ${releaseAvailableAt.toLocaleDateString()}.`, 403);
+        }
+
+        // RN - Doble Validación de Monto: El monto de la transacción debe coincidir 
+        // exactamente con la sumatoria de unitPriceAtPurchase de los items.
+        const orderItems = await prisma.orderItem.findMany({ where: { orderId: transaction.orderId } });
+        const calculatedTotal = orderItems.reduce((acc, item) => acc + (Number(item.unitPriceAtPurchase) * item.quantity), 0);
+        
+        // Tolerancia de 0.01 por redondeos de Decimal en DB
+        if (Math.abs(calculatedTotal - Number(transaction.amount)) > 0.01) {
+            logger.error(`[Transaction Audit] Inconsistencia financiera en Transacción ${transactionId}. Esperado: ${calculatedTotal}, Encontrado: ${transaction.amount}`);
+            throw new ErrorResponse(`Inconsistencia financiera detectada. El monto de la transacción no coincide con el total calculado de los productos.`, 400);
+        }
+
         // Actualizar transacción a FUNDS_RELEASED
         const now = new Date();
         const approvedTransaction = await prisma.transaction.update({
