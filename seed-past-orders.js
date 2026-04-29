@@ -5,7 +5,7 @@ async function main() {
 
     // 1. Obtener datos base
     const users = await prisma.user.findMany({ take: 5, select: { id: true } });
-    const products = await prisma.product.findMany({ take: 10, select: { id: true, precio: true } });
+    const products = await prisma.product.findMany({ take: 10, select: { id: true, price: true } });
 
     if (users.length === 0 || products.length === 0) {
         console.error("No hay usuarios o productos en la BD para generar órdenes.");
@@ -20,7 +20,7 @@ async function main() {
         const randomUser = users[Math.floor(Math.random() * users.length)];
         const randomProduct = products[Math.floor(Math.random() * products.length)];
         const qty = Math.floor(Math.random() * 3) + 1; // 1 a 3 unidades
-        const itemsPrice = Number(randomProduct.precio) * qty;
+        const totalPrice = Number(randomProduct.price) * qty;
 
         // Fecha aleatoria en los últimos 30 días
         const date = new Date();
@@ -29,33 +29,25 @@ async function main() {
         await prisma.order.create({
             data: {
                 userId: randomUser.id,
-                itemsPrice: itemsPrice,
                 shippingPrice: 0,
-                totalPrice: itemsPrice,
+                totalPrice: totalPrice,
                 isPaid: true,
                 paidAt: date,
                 createdAt: date,
-                orderStatus: "delivered",
+                status: "DELIVERED",
                 orderItems: {
                     create: [
                         {
                             productId: randomProduct.id,
                             quantity: qty,
-                            unitPriceAtPurchase: randomProduct.precio
+                            unitPriceAtPurchase: randomProduct.price
                         }
                     ]
                 }
             }
         });
         
-        // Actualizar ventas del producto para el Ranking (Top Products)
-        await prisma.product.update({
-            where: { id: randomProduct.id },
-            data: {
-                cantidadVendida: { increment: qty }
-            }
-        });
-
+        // En 3NF no actualizamos contadores manuales redundantes.
         generated++;
     }
 

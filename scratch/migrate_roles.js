@@ -11,8 +11,8 @@ async function main() {
     // 2. Migrar de forma segura forzando el cast al nuevo Enum
     const result = await prisma.$executeRaw`
       UPDATE "User" 
-      SET role = 'buyer'::"Role" 
-      WHERE role::text = 'user' OR role::text = 'USER' OR role::text = 'BUYER'
+      SET role = 'BUYER'::"Role" 
+      WHERE role::text = 'user' OR role::text = 'USER' OR role::text = 'buyer'
     `;
     
     console.log(`Migración completada. Usuarios actualizados: ${result}`);
