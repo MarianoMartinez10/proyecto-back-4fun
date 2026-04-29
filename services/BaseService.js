@@ -80,7 +80,7 @@ class BaseService {
 
     /**
     * Devuelve colección de registros transformados a DTO.
-    * RN (Filtro): Solo retorna registros con estado 'activo: true' para limpieza de datos.
+    * RN (Filtro): Solo retorna registros con estado 'isActive: true' para limpieza de datos.
     * RN (Contexto de Rol): El controlador puede habilitar includeInactive=true
     * para rutas administrativas protegidas por RBAC.
     * @param {object} context - Contexto de consulta.
@@ -92,7 +92,7 @@ class BaseService {
 
         // Estructura de consulta con filtro de vitalidad por defecto.
         const queryOptions = {
-            where: (this.hasActiveField && !includeInactive) ? { activo: { not: false } } : {}
+            where: (this.hasActiveField && !includeInactive) ? { isActive: { not: false } } : {}
         };
         
         const select = this.getSelectFields();
@@ -122,7 +122,7 @@ class BaseService {
 
         const queryOptions = {
             where: (this.hasActiveField && !includeInactive)
-                ? { id, activo: { not: false } }
+                ? { id, isActive: { not: false } }
                 : { id }
         };
         const select = this.getSelectFields();
@@ -144,7 +144,7 @@ class BaseService {
     /**
      * Purga lógicamente un registro por su ID (Regla 2 TFI).
      * -------------------------------------------------------------------------
-     * En lugar de borrar físicamente (DELETE), muta el estado a 'activo: false'.
+     * En lugar de borrar físicamente (DELETE), muta el estado a 'isActive: false'.
      * Esto garantiza la trazabilidad histórica y consistencia referencial.
      * 
      * @param {string} id - UUID del ítem.
@@ -161,7 +161,7 @@ class BaseService {
             // Operación de Mutación (Logical Delete)
             await this.model.update({
                 where: { id },
-                data: { activo: false }
+                data: { isActive: false }
             });
         } else {
             await this.model.delete({ where: { id } });

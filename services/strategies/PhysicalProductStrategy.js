@@ -33,16 +33,14 @@ class PhysicalProductStrategy extends PricingStrategy {
      * @returns {{ finalPrice: number, discountPercentage: number }}
      */
     calculatePrice(p) {
-        // RN — Promociones: Un descuento solo es válido si el % > 0 y no ha expirado.
-        const discountActive = p.descuentoPorcentaje > 0 &&
-            (!p.descuentoFechaFin || new Date(p.descuentoFechaFin) > new Date());
+        const discountActive = p.discountPercent > 0 &&
+            (!p.discountEndDate || new Date(p.discountEndDate) > new Date());
 
-        const discountPercentage = discountActive ? p.descuentoPorcentaje : 0;
+        const discountPercentage = discountActive ? p.discountPercent : 0;
 
-        // RN — Precisión Financiera: El precio final aplica el factor de descuento.
         const finalPrice = discountActive
-            ? Number((Number(p.precio) * (1 - p.descuentoPorcentaje / 100)).toFixed(2))
-            : Number(p.precio);
+            ? Number((Number(p.price) * (1 - p.discountPercent / 100)).toFixed(2))
+            : Number(p.price);
 
         return { finalPrice, discountPercentage };
     }

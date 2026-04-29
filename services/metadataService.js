@@ -25,19 +25,19 @@ class MetadataService {
 
     /**
      * Data Transfer Object (DTO) Mapper.
-     * Oculta a la capa de presentación si en base de datos la columna es `nombre` o `activo`.
+     * Oculta a la capa de presentación si en base de datos la columna es `name` o `isActive`.
      */
     toDTO(doc) {
         return {
             id: doc.id,
-            name: doc.nombre,
-            imageId: doc.imageId,
-            active: doc.activo,
+            name: doc.name,
+            imageId: doc.imageUrl,
+            active: doc.isActive,
         };
     }
 
     async getAll() {
-        const docs = await this.model.findMany({ where: { activo: true } });
+        const docs = await this.model.findMany({ where: { isActive: true } });
         logger.info(`${this.plural} obtenidos: ${docs.length}`);
         return docs.map(this.toDTO);
     }
@@ -60,7 +60,7 @@ class MetadataService {
         if (existing) throw new ErrorResponse(`Ya existe un(a) ${this.singular} con ese ID`, 400);
 
         const doc = await this.model.create({
-            data: { slug, nombre: name, imageId, activo: active !== undefined ? active : true }
+            data: { slug, name, imageUrl: imageId, isActive: active !== undefined ? active : true }
         });
         
         logger.info(`${this.singular} creado: ${doc.slug}`);
@@ -70,9 +70,9 @@ class MetadataService {
     async update(id, data) {
         const { name, imageId, active, newId: newSlug } = data;
         const updateData = {};
-        if (name !== undefined) updateData.nombre = name;
-        if (imageId !== undefined) updateData.imageId = imageId;
-        if (active !== undefined) updateData.activo = active;
+        if (name !== undefined) updateData.name = name;
+        if (imageId !== undefined) updateData.imageUrl = imageId;
+        if (active !== undefined) updateData.isActive = active;
 
         let doc = await this.model.findFirst({ where: { slug: id } });
         if (!doc) throw new ErrorResponse(this.notFoundMsg || `${this.singular} no encontrado`, 404);
@@ -100,14 +100,14 @@ class MetadataService {
     }
 
     /**
-     * RN (Soft Delete universal): Suprime entidades de la pantalla pública apagando su bandera `activo`.
+     * RN (Soft Delete universal): Suprime entidades de la pantalla pública apagando su bandera `isActive`.
      */
     async deleteOne(id) {
         let doc = await this.model.findFirst({ where: { slug: id } });
         if (!doc) doc = await this.model.findFirst({ where: { id } });
         if (!doc) throw new ErrorResponse(this.notFoundMsg || `${this.singular} no encontrado`, 404);
 
-        await this.model.update({ where: { id: doc.id }, data: { activo: false } });
+        await this.model.update({ where: { id: doc.id }, data: { isActive: false } });
         logger.info(`${this.singular} eliminado (soft delete): ${id}`);
         return true;
     }
@@ -117,7 +117,7 @@ class MetadataService {
 
         const result = await this.model.updateMany({
             where: { OR: [{ slug: { in: ids } }, { id: { in: ids } }] },
-            data: { activo: false }
+            data: { isActive: false }
         });
         
         logger.info(`${this.plural} eliminados (soft delete): ${result.count}`);

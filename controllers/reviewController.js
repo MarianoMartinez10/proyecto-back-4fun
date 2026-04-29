@@ -72,7 +72,7 @@ exports.voteHelpful = async (req, res, next) => {
  */
 exports.deleteReview = async (req, res, next) => {
   try {
-    const isAdmin = req.user.role === 'admin';
+    const isAdmin = req.user.role === 'ADMIN';
     const result = await ReviewService.deleteReview(req.params.id, req.user.id, isAdmin);
     res.status(200).json({ success: true, ...result });
   } catch (error) {

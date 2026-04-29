@@ -48,15 +48,15 @@ class OrderService {
             if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
 
             // RN de Disponibilidad por Tipología (Físico vs Digital)
-            if (product.tipo === 'Digital') {
+            if (product.type === 'DIGITAL') {
                 const availableKeys = await prisma.digitalKey.count({
-                    where: { productId: item.product, estado: 'DISPONIBLE' }
+                    where: { productId: item.product, status: 'AVAILABLE' }
                 });
                 if (availableKeys < item.quantity) {
-                    throw new ErrorResponse(`Stock insuficiente de keys para: ${product.nombre} (Disponibles: ${availableKeys})`, 400);
+                    throw new ErrorResponse(`Stock insuficiente de keys para: ${product.name} (Disponibles: ${availableKeys})`, 400);
                 }
             } else {
-                if (product.stock < item.quantity) throw new ErrorResponse(`Stock insuficiente para: ${product.nombre}`, 400);
+                if (product.stock < item.quantity) throw new ErrorResponse(`Stock insuficiente para: ${product.name}`, 400);
             }
 
             const component = ProductComponentFactory.create(product);
@@ -70,15 +70,15 @@ class OrderService {
                 unit_price: componentPrice, // Precio calculado vía polimorfismo
                 currency_id: 'ARS',
                 picture_url: item.image || undefined,
-                description: product.descripcion?.substring(0, 200) || '',
-                tipo: product.tipo
+                description: product.description?.substring(0, 200) || '',
+                type: product.type
             });
         }
 
         // RN (Gestión de Inventario Optimista): Reduce los saldos provisionalmente asumiendo 
         // voluntad total de pago por parte del cliente.
         for (const item of validatedItems) {
-            if (item.tipo !== 'Digital') {
+            if (item.type !== 'DIGITAL') {
                 const updated = await prisma.product.updateMany({
                     where: { id: item.id, stock: { gte: item.quantity } },
                     data: { stock: { decrement: item.quantity } }
@@ -101,7 +101,7 @@ class OrderService {
                 paymentMethod: paymentMethod || 'mercadopago',
                 shippingPrice: 0,
                 totalPrice: calculatedTotal,
-                orderStatus: 'pending',
+                status: 'PENDING',
                 isPaid: false,
                 shippingAddress: shippingAddress ? { create: shippingAddress } : undefined,
                 orderItems: {
@@ -133,7 +133,7 @@ class OrderService {
                 include: { 
                     orderItems: { include: { product: true } }, 
                     shippingAddress: true, 
-                    digitalKeys: { select: { id: true, clave: true, productId: true } } 
+                    digitalKeys: { select: { id: true, key: true, productId: true } } 
                 },
                 skip: (pageNum - 1) * limitNum,
                 take: limitNum
@@ -152,8 +152,8 @@ class OrderService {
                     ...i, 
                     _id: i.id, 
                     price: Number(i.unitPriceAtPurchase), 
-                    name: i.product?.nombre || 'Producto Desconocido', 
-                    image: i.product?.imagenUrl || DEFAULT_IMAGE 
+                    name: i.product?.name || 'Producto Desconocido', 
+                    image: i.product?.imageUrl || DEFAULT_IMAGE 
                 }))
             }))
         };
@@ -177,15 +177,15 @@ class OrderService {
                 ...i, 
                 _id: i.id, 
                 price: Number(i.unitPriceAtPurchase), 
-                name: i.product?.nombre || 'Producto Desconocido', 
-                image: i.product?.imagenUrl || DEFAULT_IMAGE 
+                name: i.product?.name || 'Producto Desconocido', 
+                image: i.product?.imageUrl || DEFAULT_IMAGE 
             }))
         };
     }
 
     async getAllOrders({ page = 1, limit = 10, status, userId } = {}) {
         const where = {};
-        if (status) where.orderStatus = status;
+        if (status) where.status = status;
         if (userId) where.userId = userId;
 
         const pageNum = Math.max(1, Number(page));
@@ -218,8 +218,8 @@ class OrderService {
                     ...i, 
                     _id: i.id, 
                     price: Number(i.unitPriceAtPurchase), 
-                    name: i.product?.nombre || 'Producto Desconocido', 
-                    image: i.product?.imagenUrl || DEFAULT_IMAGE 
+                    name: i.product?.name || 'Producto Desconocido', 
+                    image: i.product?.imageUrl || DEFAULT_IMAGE 
                 }))
             }))
         };
@@ -229,7 +229,7 @@ class OrderService {
         const order = await prisma.order.findUnique({ where: { id: orderId } });
         if (!order) throw new ErrorResponse('Orden no encontrada', 404);
         
-        const updated = await prisma.order.update({ where: { id: orderId }, data: { orderStatus: status } });
+        const updated = await prisma.order.update({ where: { id: orderId }, data: { status: status } });
         return { ...updated, _id: updated.id };
     }
 
@@ -239,7 +239,7 @@ class OrderService {
             include: {
                 user: { select: { id: true, name: true, email: true } },
                 orderItems: { include: { product: true } },
-                digitalKeys: { select: { id: true, clave: true, productId: true } }
+                digitalKeys: { select: { id: true, key: true, productId: true } }
             }
         });
 
@@ -259,7 +259,7 @@ class OrderService {
             });
 
             for (const item of order.orderItems || []) {
-                if (item.product?.tipo !== 'Digital') continue;
+                if (item.product?.type !== 'DIGITAL') continue;
 
                 const alreadyAssigned = await tx.digitalKey.count({
                     where: { orderId, productId: item.productId }
@@ -271,9 +271,9 @@ class OrderService {
                 const availableKeys = await tx.digitalKey.findMany({
                     where: {
                         productId: item.productId,
-                        estado: 'DISPONIBLE',
+                        status: 'AVAILABLE',
                         orderId: null,
-                        activo: true,
+                        isActive: true,
                     },
                     orderBy: { createdAt: 'asc' },
                     take: missingKeys,
@@ -281,20 +281,20 @@ class OrderService {
                 });
 
                 if (availableKeys.length < missingKeys) {
-                    throw new ErrorResponse(`No hay keys suficientes para ${item.product?.nombre || 'producto digital'}`, 409);
+                    throw new ErrorResponse(`No hay keys suficientes para ${item.product?.name || 'producto digital'}`, 409);
                 }
 
                 const keyIds = availableKeys.map(k => k.id);
                 const updatedKeys = await tx.digitalKey.updateMany({
                     where: {
                         id: { in: keyIds },
-                        estado: 'DISPONIBLE',
+                        status: 'AVAILABLE',
                         orderId: null,
                     },
                     data: {
-                        estado: 'VENDIDA',
+                        status: 'SOLD',
                         orderId,
-                        fechaVenta: now
+                        soldAt: now
                     }
                 });
 
@@ -305,7 +305,7 @@ class OrderService {
                 assignedKeysCount += updatedKeys.count;
 
                 const currentAvailable = await tx.digitalKey.count({
-                    where: { productId: item.productId, estado: 'DISPONIBLE', activo: true }
+                    where: { productId: item.productId, status: 'AVAILABLE', isActive: true }
                 });
 
                 await tx.product.update({
@@ -319,7 +319,7 @@ class OrderService {
                 include: {
                     user: { select: { id: true, name: true, email: true } },
                     orderItems: { include: { product: true } },
-                    digitalKeys: { select: { id: true, clave: true, productId: true } }
+                    digitalKeys: { select: { id: true, key: true, productId: true } }
                 }
             });
 

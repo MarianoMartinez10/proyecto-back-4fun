@@ -29,10 +29,10 @@ exports.addKeys = async (req, res, next) => {
         // RN (Validación Estructural): Las llaves digitales solo aplican a mercadería compatible.
         const product = await prisma.product.findUnique({ where: { id: productId } });
         if (!product) throw new ErrorResponse('Producto no encontrado', 404);
-        if (product.tipo !== 'Digital') throw new ErrorResponse('El producto no es digital', 400);
+        if (product.type !== 'DIGITAL') throw new ErrorResponse('El producto no es digital', 400);
 
         // RN (Seguridad Marketplace): Un vendedor solo puede cargar keys a sus propios productos.
-        if (req.user.role !== 'admin' && product.sellerId !== req.user.id) {
+        if (req.user.role !== 'ADMIN' && product.sellerId !== req.user.id) {
             throw new ErrorResponse('No tienes permiso para gestionar el inventario de este producto', 403);
         }
 
@@ -42,17 +42,17 @@ exports.addKeys = async (req, res, next) => {
 
         // 2. Compara contra BDD para descartar colisiones con claves históricas.
         const existingKeysDocs = await prisma.digitalKey.findMany({
-            where: { clave: { in: uniqueKeys } },
-            select: { clave: true }
+            where: { key: { in: uniqueKeys } },
+            select: { key: true }
         });
-        const existingKeysSet = new Set(existingKeysDocs.map(k => k.clave));
+        const existingKeysSet = new Set(existingKeysDocs.map(k => k.key));
 
         const newKeysToInsert = uniqueKeys
             .filter(k => !existingKeysSet.has(k))
             .map(k => ({
                 productId: productId,
-                clave: k,
-                estado: 'DISPONIBLE'
+                key: k,
+                status: 'AVAILABLE'
             }));
 
         if (newKeysToInsert.length === 0) {
@@ -72,7 +72,7 @@ exports.addKeys = async (req, res, next) => {
         // RN (Sincronía de Caching): Fuerza la actualización del contador 'stock' en Product
         // para mantener el Frontend consistente sin tener que hacer Joins masivos cada vez que un usuario mira el shop.
         const currentTotal = await prisma.digitalKey.count({
-            where: { productId: productId, estado: 'DISPONIBLE' }
+            where: { productId: productId, status: 'AVAILABLE' }
         });
         
         await prisma.product.update({
@@ -80,7 +80,7 @@ exports.addKeys = async (req, res, next) => {
             data: { stock: currentTotal }
         });
 
-        logger.info(`🔑 ${newKeysToInsert.length} keys agregadas para ${product.nombre}`);
+        logger.info(`🔑 ${newKeysToInsert.length} keys agregadas para ${product.name}`);
 
         res.status(201).json({
             success: true,
@@ -111,14 +111,14 @@ exports.deleteKey = async (req, res, next) => {
         if (!key) throw new ErrorResponse('Key no encontrada', 404);
 
         // RN (Seguridad): Verificar propiedad antes de la revocación.
-        if (req.user.role !== 'admin' && key.product.sellerId !== req.user.id) {
+        if (req.user.role !== 'ADMIN' && key.product.sellerId !== req.user.id) {
             throw new ErrorResponse('Acceso denegado: No eres el dueño del producto asociado', 403);
         }
 
         // RN de Seguridad Auditoría: Permite borrar keys traficadas para anularlas en bases de datos externas,
         // pero inyecta un rastro inamovible en el Logger porque afecta la trazabilidad contable de esa orden.
-        if (key.estado === 'VENDIDA') {
-            logger.warn(`🗑️ Admin borrando key VENDIDA: ${key.clave} (Orden: ${key.orderId})`);
+        if (key.status === 'SOLD') {
+            logger.warn(`🗑️ Admin borrando key VENDIDA: ${key.key} (Orden: ${key.orderId})`);
         }
 
         const productId = key.productId;
@@ -128,7 +128,7 @@ exports.deleteKey = async (req, res, next) => {
         const product = await prisma.product.findUnique({ where: { id: productId } });
         if (product) {
             const count = await prisma.digitalKey.count({
-                where: { productId: productId, estado: 'DISPONIBLE' }
+                where: { productId: productId, status: 'AVAILABLE' }
             });
             await prisma.product.update({
                 where: { id: productId },
@@ -155,7 +155,7 @@ exports.getKeysByProduct = async (req, res, next) => {
         const product = await prisma.product.findUnique({ where: { id: productId } });
         if (!product) throw new ErrorResponse('Producto no encontrado', 404);
         
-        if (req.user.role !== 'admin' && product.sellerId !== req.user.id) {
+        if (req.user.role !== 'ADMIN' && product.sellerId !== req.user.id) {
             throw new ErrorResponse('Acceso denegado: No tienes acceso a la auditoría de este producto', 403);
         }
         

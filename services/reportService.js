@@ -25,14 +25,19 @@ class ReportService {
                 }),
                 // 2. Productos más vendidos
                 prisma.product.findMany({
-                    where: { activo: true },
-                    orderBy: { cantidadVendida: 'desc' },
+                    where: { isActive: true },
+                    orderBy: { orderItems: { _count: 'desc' } },
                     take: 5,
-                    select: { id: true, nombre: true, cantidadVendida: true, precio: true }
+                    select: { 
+                        id: true, 
+                        name: true, 
+                        price: true,
+                        _count: { select: { orderItems: true } }
+                    }
                 }),
                 // 3. Órdenes por estado (Auditoría de gestión)
                 prisma.order.groupBy({
-                    by: ['orderStatus'],
+                    by: ['status'],
                     _count: { id: true }
                 })
             ]);

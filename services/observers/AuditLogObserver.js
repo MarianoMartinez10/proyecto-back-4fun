@@ -41,7 +41,7 @@ class AuditLogObserver extends OrderObserver {
             userId:      order?.userId,
             totalPrice:  order?.totalPrice,
             isPaid:      order?.isPaid,
-            orderStatus: order?.orderStatus,
+            status:      order?.status,
             timestamp:   new Date().toISOString()
         });
     }

@@ -4,9 +4,9 @@
  */
 
 export enum Role {
-  buyer = 'buyer',
-  seller = 'seller',
-  admin = 'admin'
+  BUYER = 'BUYER',
+  SELLER = 'SELLER',
+  ADMIN = 'ADMIN'
 }
 
 export interface User {
@@ -18,7 +18,7 @@ export interface User {
   phone?: string;
   address?: string;
   isVerified: boolean;
-  activo: boolean;
+  isActive: boolean;
   createdAt: Date;
 }
 
