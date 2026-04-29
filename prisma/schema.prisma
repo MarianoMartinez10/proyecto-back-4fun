@@ -75,6 +75,15 @@ enum TransactionStatus {
   CANCELLED          // Transacción cancelada
 }
 
+/// Estados del ciclo de vida del producto
+enum ProductStatus {
+  DRAFT         // En creación, no visible al público
+  ACTIVE        // Visible y a la venta
+  OUT_OF_STOCK  // Sin stock, visible pero no comprable
+  SUSPENDED     // Suspendido por moderación/admin
+  ARCHIVED      // Borrado lógico para integridad histórica
+}
+
 /// Tipo de descuento (cupones)
 enum DiscountType {
   PERCENTAGE
@@ -201,8 +210,8 @@ model Product {
   developer        String
   imageUrl         String      @default("https://placehold.co/600x400?text=No+Image")
   trailerUrl       String?
-  stock            Int         @default(0)
-  isActive         Boolean     @default(true)
+  stock            Int           @default(0)
+  status           ProductStatus @default(DRAFT)
   specPreset       SpecPreset?
   discountPercent  Int         @default(0)     // Strategy: descuento temporal (%)
   discountEndDate  DateTime?                   // Strategy: vigencia del descuento
@@ -234,10 +243,10 @@ model Product {
   reviews      Review[]
   digitalKeys  DigitalKey[]
 
-  @@index([isActive, displayOrder])
-  @@index([isActive, platformId])
-  @@index([isActive, genreId])
-  @@index([isActive, createdAt])
+  @@index([status, displayOrder])
+  @@index([status, platformId])
+  @@index([status, genreId])
+  @@index([status, createdAt])
   @@index([sellerId])
   @@index([isBundle])
 }

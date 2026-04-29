@@ -37,7 +37,12 @@ class ProductService extends BaseService {
      * Inyecta la configuración de entidad al motor base de persistencia.
      */
     constructor() {
-        super('product', { entityLabel: 'Producto' });
+        super('product', { 
+            entityLabel: 'Producto', 
+            activeFieldName: 'status', 
+            activeValue: 'ACTIVE',
+            inactiveValue: 'ARCHIVED'
+        });
     }
 
     /**
@@ -135,7 +140,8 @@ class ProductService extends BaseService {
             rating: p.reviews?.length ? Number((p.reviews.reduce((acc, curr) => acc + curr.rating, 0) / p.reviews.length).toFixed(1)) : 0,
             // RN (Stock): Calculado por la ConcreteStrategy según tipología de producto.
             stock,
-            active: p.isActive,
+            status: p.status,
+            active: p.status === 'ACTIVE',
             specPreset: p.specPreset,
             requirements: p.requirements
                 ? Object.fromEntries(
@@ -164,7 +170,7 @@ class ProductService extends BaseService {
         const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted, includeInactive, sellerId } = query;
 
         const includeInactiveFlag = includeInactive === true || includeInactive === 'true';
-        const where = includeInactiveFlag ? {} : { isActive: true };
+        const where = includeInactiveFlag ? { NOT: { status: 'ARCHIVED' } } : { status: 'ACTIVE' };
 
         // RN - Búsqueda: Sensible a múltiples campos (Match Parcial Insensible).
         if (search) {
@@ -265,7 +271,7 @@ class ProductService extends BaseService {
         const product = await this.getById(id, { includeInactive });
 
         // Si la taxonomia relacionada fue dada de baja, el producto no debe exponerse en tienda publica.
-        if (!includeInactive && (product.platform?.active === false || product.genre?.active === false)) {
+        if (!includeInactive && (product.status !== 'ACTIVE' || product.platform?.active === false || product.genre?.active === false)) {
             throw new ErrorResponse('Producto no disponible', 404);
         }
 
@@ -282,6 +288,10 @@ class ProductService extends BaseService {
         const { name, description, price, platform: platformSlug, genre: genreSlug, platformId, genreId, type,
             releaseDate, developer, imageId, trailerUrl, stock, active, specPreset,
             requirements, discountPercentage, discountEndDate, sellerId } = data;
+
+        // RN - Integridad Taxonómica (3NF): Los campos de clasificación son MANDATORIOS.
+        if (!platformId && !platformSlug) throw new ErrorResponse('La Plataforma es obligatoria para la integridad del catálogo', 400);
+        if (!genreId && !genreSlug) throw new ErrorResponse('El Género es obligatorio para la integridad del catálogo', 400);
 
         // RN - Validación Cruzada: Verifica existencia de dependencias taxonómicas activas.
         let platformRecord = null;
@@ -303,7 +313,7 @@ class ProductService extends BaseService {
         if (!genreRecord) throw new ErrorResponse(`Género '${genreSlug}' no encontrado`, 400);
 
         // RN - Ordenamiento default: Los nuevos se ubican al final del stack.
-        const firstProduct = await prisma.product.findFirst({ where: { isActive: true }, orderBy: { displayOrder: 'asc' } });
+        const firstProduct = await prisma.product.findFirst({ where: { status: 'ACTIVE' }, orderBy: { displayOrder: 'asc' } });
         const newOrder = firstProduct ? firstProduct.displayOrder - 1000 : 0;
 
         const tipo = type === 'Physical' ? 'PHYSICAL' : 'DIGITAL';
@@ -337,7 +347,7 @@ class ProductService extends BaseService {
                 imageUrl: imageId || 'https://placehold.co/600x400?text=Sin+Imagen',
                 trailerUrl: trailerUrl || null,
                 stock: tipo === 'DIGITAL' ? 0 : (stock ?? 0),
-                isActive: active !== undefined ? active : true,
+                status: active === false ? 'DRAFT' : 'DRAFT', // Por defecto DRAFT hasta validación de stock
                 specPreset: specPreset ? specPreset.toUpperCase() : null,
                 discountPercent: discountPercentage ?? 0,
                 discountEndDate: discountEndDate ? new Date(discountEndDate) : null,
@@ -349,6 +359,12 @@ class ProductService extends BaseService {
         });
 
         logger.info(`[ProductService] Producto creado: ${product.id}`);
+        
+        // RN - Activación Automática: Si se solicitó activo, validamos stock.
+        if (active === true || active === 'true') {
+            return await this.updateProduct(product.id, { active: true });
+        }
+
         return this.toDTO(product);
     }
 
@@ -366,7 +382,13 @@ class ProductService extends BaseService {
         fields.forEach(field => {
             const [src, dest] = field.split(':');
             const target = dest || src;
-            if (data[src] !== undefined) updateData[target] = data[src];
+            if (data[src] !== undefined) {
+                if (target === 'isActive') {
+                    updateData.status = data[src] ? 'ACTIVE' : 'DRAFT';
+                } else {
+                    updateData[target] = data[src];
+                }
+            }
         });
 
         // RN - Normalización de Enums (3NF): Prisma es case-sensitive.
@@ -407,6 +429,15 @@ class ProductService extends BaseService {
                 where: { productId: id, status: 'AVAILABLE' }
             });
             updateData.stock = digitalStock;
+        }
+
+        // RN - Suspensión de Venta: No puede ser ACTIVE si stock == 0.
+        const finalStatus = updateData.status || existing.status;
+        const finalStock = updateData.stock !== undefined ? updateData.stock : existing.stock;
+        
+        if (finalStatus === 'ACTIVE' && finalStock <= 0) {
+            updateData.status = 'OUT_OF_STOCK';
+            logger.warn(`[ProductService] Intento de activar producto sin stock (${id}). Cambiado a OUT_OF_STOCK.`);
         }
 
         // Manejo de Excepciones en Relaciones: Si vienen requisitos nuevos, borra los anteriores 
@@ -455,9 +486,18 @@ class ProductService extends BaseService {
             where: { OR: [{ bundleId: id }, { productId: id }] }
         }).catch(() => {}); // catch silencioso: si la tabla no existe aún, no bloqueamos
         
-        // RN - Integridad Histórica: El producto no se borra (SQL DELETE), se desactiva.
-        await prisma.product.update({ where: { id }, data: { isActive: false } });
-        logger.warn(`[ProductService] Producto dado de baja lógica: ${id}`);
+        // RN - Protección de Borrado: Solo permitimos borrar si no hay transacciones.
+        const hasHistory = await prisma.orderItem.count({ where: { productId: id } });
+        
+        if (hasHistory > 0) {
+            await prisma.product.update({ where: { id }, data: { status: 'ARCHIVED' } });
+            logger.info(`[ProductService] Producto archivado por integridad histórica: ${id}`);
+        } else {
+            // Si no hay historial, podríamos borrarlo físicamente, pero seguimos el patrón de archivado
+            // para mantener la trazabilidad de auditoría según Regla 2 TFI.
+            await prisma.product.update({ where: { id }, data: { status: 'ARCHIVED' } });
+            logger.warn(`[ProductService] Producto enviado a archivo (sin historial): ${id}`);
+        }
         return true;
     }
 
@@ -469,7 +509,7 @@ class ProductService extends BaseService {
 
         return await prisma.product.updateMany({
             where: { id: { in: ids } },
-            data: { isActive: false }
+            data: { status: 'ARCHIVED' }
         });
     }
 
@@ -527,10 +567,10 @@ class ProductService extends BaseService {
         if (newPosition < 1) throw new ErrorResponse('Posición inválida', 400);
 
         const product = await prisma.product.findUnique({ where: { id } });
-        if (!product || !product.isActive) throw new ErrorResponse('Producto no encontrable o inactivo', 404);
+        if (!product || product.status === 'ARCHIVED') throw new ErrorResponse('Producto no encontrable o archivado', 404);
 
         const otherProducts = await prisma.product.findMany({
-            where: { id: { not: id }, isActive: true },
+            where: { id: { not: id }, status: 'ACTIVE' },
             orderBy: { displayOrder: 'asc' }
         });
 

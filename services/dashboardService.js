@@ -31,8 +31,11 @@ class DashboardService {
             }),
             prisma.user.count(),
             prisma.product.findMany({ 
-                where: sellerId ? { sellerId } : {},
-                select: { isActive: true, stock: true } 
+                where: { 
+                    NOT: { status: 'ARCHIVED' },
+                    ...(sellerId && { sellerId }) 
+                },
+                select: { status: true, stock: true } 
             }),
             prisma.orderItem.findMany({
                 where: { 
@@ -53,10 +56,10 @@ class DashboardService {
 
         const totalRevenue = paidOrders.reduce((s, o) => s + (Number(o.unitPriceAtPurchase) * o.quantity), 0);
         const totalOrders = paidOrders.length;
-        const activeProducts = allProducts.filter(p => p.isActive).length;
+        const activeProducts = allProducts.filter(p => p.status === 'ACTIVE').length;
         
         // RN Comercial: Advierte umbrales de escasez severa en depósito.
-        const lowStockProducts = allProducts.filter(p => p.isActive && p.stock <= 5).length;
+        const lowStockProducts = allProducts.filter(p => p.status === 'ACTIVE' && p.stock <= 5).length;
 
         let currentMonthRev = 0, lastMonthRev = 0;
         for (const o of recentMonthOrders) {

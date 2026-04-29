@@ -69,7 +69,7 @@ class CartService {
         
         // Regla de Negocio (RN-05): "Disponibilidad Comercial". 
         // Impide anexar artículos temporalmente suspendidos en catálogo.
-        if (!product.isActive) throw new ErrorResponse('Este producto ya no está disponible', 400);
+        if (product.status !== 'ACTIVE') throw new ErrorResponse('Este producto ya no está disponible', 400);
 
         let cart = await prisma.cart.findUnique({
             where: { userId },

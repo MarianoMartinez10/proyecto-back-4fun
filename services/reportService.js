@@ -25,7 +25,7 @@ class ReportService {
                 }),
                 // 2. Productos más vendidos
                 prisma.product.findMany({
-                    where: { isActive: true },
+                    where: { status: 'ACTIVE' },
                     orderBy: { orderItems: { _count: 'desc' } },
                     take: 5,
                     select: { 
