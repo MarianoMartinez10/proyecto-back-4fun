@@ -27,8 +27,8 @@ const { registerValidation, loginValidation } = require('../middlewares/authVali
 // ─── RUTAS PÚBLICAS (OPEN ACCESS) ───
 // Accesibles sin token; gestionan el ingreso y recuperación de acceso.
 
-/** @route GET /api/auth/verify - Confirmación de cuenta vía token de correo. */
-router.get('/verify', verifyEmail);
+/** @route GET /api/auth/verify-email - Confirmación de cuenta vía token de correo. */
+router.get('/verify-email', verifyEmail);
 
 /** @route POST /api/auth/register - Registro con validación estructural de esquema. */
 router.post('/register', registerValidation, register);

@@ -5,7 +5,7 @@
  */
 
 const primaryColor = '#d658fa';
-const frontendUrl = process.env.FRONTEND_URL || 'https://4funstore-vercel.vercel.app';
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:9002';
 
 const _getHtmlWrapper = (content, buttonText, buttonUrl) => {
   return `
@@ -55,11 +55,11 @@ const _getHtmlWrapper = (content, buttonText, buttonUrl) => {
 };
 
 const getWelcomeEmail = (name, verificationToken) => {
-  const verifyUrl = `${frontendUrl}/verify?token=${verificationToken}`;
+  const verifyUrl = `${frontendUrl}/verificar-email?token=${verificationToken}`;
   const content = `
     <div style="text-align: center; margin-bottom: 30px;">
       <span style="background-color: rgba(214, 88, 250, 0.1); color: #d658fa; padding: 5px 15px; border-radius: 20px; font-size: 10px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase;">
-        Nivel 1 Desbloqueado
+        Correo de activación
       </span>
     </div>
     <h1 style="font-size: 32px; margin: 0; color: #ffffff; letter-spacing: -1.5px; font-weight: 900; line-height: 1;">¡Tu aventura <br/>comienza ahora!</h1>
@@ -104,8 +104,28 @@ const getPasswordResetEmail = (name, resetUrl) => {
   };
 };
 
+const getContactNotificationEmail = (fullName, email, message) => {
+  const content = `
+    <h1 style="font-size: 24px; margin: 0; color: #ffffff;">Nuevo mensaje de contacto</h1>
+    <div style="text-align: left; margin-top: 25px; color: rgba(255,255,255,0.8); line-height: 1.6;">
+      <p><strong>Nombre:</strong> ${fullName}</p>
+      <p><strong>Email:</strong> ${email}</p>
+      <p><strong>Mensaje:</strong></p>
+      <div style="background-color: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; border-left: 4px solid #d658fa;">
+        ${message}
+      </div>
+    </div>
+  `;
+  return {
+    subject: `Nuevo mensaje de contacto: ${fullName}`,
+    html: _getHtmlWrapper(content)
+  };
+};
+
 module.exports = {
   getWelcomeEmail,
   getDigitalDeliveryEmail,
-  getPasswordResetEmail
+  getPasswordResetEmail,
+  getContactNotificationEmail
 };
+

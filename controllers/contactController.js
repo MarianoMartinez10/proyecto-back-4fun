@@ -34,7 +34,7 @@ exports.sendMessage = async (req, res, next) => {
 
     // Regla de Negocio (Tolerancia a fallos): Verifica estado de conectividad SMTP
     // antes de prometerle un éxito al cliente final.
-    if (!EmailService.isAvailable()) {
+    if (!(await EmailService.isAvailable())) {
       logger.warn('contactController: Servicio de email no disponible al intentar enviar contacto', { email });
       return res.status(503).json({
         success: false,

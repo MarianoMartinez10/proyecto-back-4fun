@@ -9,6 +9,7 @@ const nodemailer = require('nodemailer');
 const dns = require('dns');
 const { promisify } = require('util');
 const logger = require('../utils/logger');
+const templates = require('../utils/emailTemplates');
 
 const dnsLookup = promisify(dns.lookup);
 
@@ -98,6 +99,55 @@ class EmailService {
       }
     }
   }
+
+  /**
+   * Envía email de bienvenida con token de activación.
+   */
+  async sendWelcomeEmail({ name, email, verificationToken }) {
+    const template = templates.getWelcomeEmail(name, verificationToken);
+    return this.sendEmail({
+      to: email,
+      subject: template.subject,
+      html: template.html
+    });
+  }
+
+  /**
+   * Envía email para recuperación de contraseña.
+   */
+  async sendPasswordResetEmail({ name, email, resetUrl }) {
+    const template = templates.getPasswordResetEmail(name, resetUrl);
+    return this.sendEmail({
+      to: email,
+      subject: template.subject,
+      html: template.html
+    });
+  }
+
+  /**
+   * Envía notificación de formulario de contacto a la administración.
+   */
+  async sendContactNotification({ fullName, email, message }) {
+    const template = templates.getContactNotificationEmail(fullName, email, message);
+    return this.sendEmail({
+      to: process.env.ADMIN_EMAIL || this._fromEmail,
+      subject: template.subject,
+      html: template.html
+    });
+  }
+
+  /**
+   * Envía las keys digitales compradas al usuario.
+   */
+  async sendDigitalProductDelivery(user, order, digitalKeys) {
+    const template = templates.getDigitalDeliveryEmail(user.name, order.id, digitalKeys);
+    return this.sendEmail({
+      to: user.email,
+      subject: template.subject,
+      html: template.html
+    });
+  }
 }
 
 module.exports = new EmailService();
+
