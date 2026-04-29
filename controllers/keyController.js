@@ -45,23 +45,17 @@ exports.addKeys = async (req, res, next) => {
             where: { key: { in: uniqueKeys } },
             select: { key: true }
         });
-        const existingKeysSet = new Set(existingKeysDocs.map(k => k.key));
-
-        const newKeysToInsert = uniqueKeys
-            .filter(k => !existingKeysSet.has(k))
-            .map(k => ({
-                productId: productId,
-                key: k,
-                status: 'AVAILABLE'
-            }));
-
-        if (newKeysToInsert.length === 0) {
-            return res.status(200).json({
-                success: true,
-                message: 'No se agregaron keys nuevas (todas ya existían)',
-                addedCount: 0
-            });
+        
+        if (existingKeysDocs.length > 0) {
+            const duplicates = existingKeysDocs.map(k => k.key);
+            throw new ErrorResponse(`Error de integridad: Las siguientes keys ya existen en el sistema: ${duplicates.join(', ')}`, 400);
         }
+
+        const newKeysToInsert = uniqueKeys.map(k => ({
+            productId: productId,
+            key: k,
+            status: 'AVAILABLE'
+        }));
 
         // --- Operación DML ---
         await prisma.digitalKey.createMany({

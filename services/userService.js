@@ -120,6 +120,8 @@ class UserService extends BaseService {
                 ...(address !== undefined && { address }),
                 ...(role !== undefined && { role }),
                 ...(isVerified !== undefined && { isVerified }),
+                ...(isVerified === false && { isActive: false }), // RN: Desverificar cuenta puede suspenderla
+                ...(data.isActive !== undefined && { isActive: data.isActive }),
                 // RN - Modelo Simplificado (Mercado Libre): El rol 'seller' implica aprobación.
                 // Si se activa el rol SELLER o isApproved es true, aseguramos que exista el perfil.
                 ...((role === 'SELLER' || isApproved === true) ? {
@@ -143,8 +145,26 @@ class UserService extends BaseService {
             select: this.getSelectFields()
         });
 
+        // RN - Suspensión en Cascada (Disparador): Si el usuario fue desactivado y es SELLER.
+        if (data.isActive === false && updated.role === 'SELLER') {
+            await prisma.product.updateMany({
+                where: { sellerId: id, status: 'ACTIVE' },
+                data: { status: 'SUSPENDED' }
+            });
+            logger.warn(`[Moderación] Cascada: Productos de vendedor ${id} suspendidos por desactivación de cuenta.`);
+        }
+
         logger.info(`[UserService] Perfil actualizado: ${id}`);
         return this.toDTO(updated);
+    }
+
+    /**
+     * RN - Suspensión en Cascada: Desactiva un usuario y oculta su catálogo.
+     * @param {string} id - UUID del usuario.
+     * @param {string} reason - Motivo para auditoría.
+     */
+    async suspendUser(id, reason = 'No especificada') {
+        return this.updateUser(id, { isActive: false });
     }
 
     /**
