@@ -38,7 +38,7 @@ async function verifyProductOwnership(req, res, next) {
     }
 
     // Fast-path: Admin tiene acceso global
-    if (req.user.role === 'admin') {
+    if (req.user.role === 'ADMIN') {
       logger.debug(`[ProductOwnership] Admin ${req.user.id} accediendo producto ${id}`);
       return next();
     }
@@ -49,7 +49,7 @@ async function verifyProductOwnership(req, res, next) {
       select: { 
         id: true, 
         sellerId: true, 
-        nombre: true 
+        name: true 
       }
     });
 
@@ -63,7 +63,7 @@ async function verifyProductOwnership(req, res, next) {
     }
 
     // Validación: Seller intenta acceder producto ajeno
-    if (req.user.role === 'seller' && product.sellerId !== req.user.id) {
+    if (req.user.role === 'SELLER' && product.sellerId !== req.user.id) {
       logger.warn(`[ProductOwnership] Seller ${req.user.id} intentó acceder producto ${id} de ${product.sellerId}`);
       return res.status(403).json({ 
         success: false, 

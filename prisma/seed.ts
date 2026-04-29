@@ -1,64 +1,139 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role, ProductType, PaymentMethod, OrderStatus } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import * as bcrypt from 'bcrypt';
+import 'dotenv/config';
 
-const prisma = new PrismaClient();
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  // 1. Limpieza (Ajustado a nombres reales de tablas en tu esquema)
-  // Nota: Si 'bundleItem' no existe, verifica si se llama 'productBundle' o similar
-  if (prisma.bundleItem) await prisma.bundleItem.deleteMany();
+  console.log('🧹 Limpiando la base de datos...');
+  await prisma.bundleItem.deleteMany();
   await prisma.orderItem.deleteMany();
+  await prisma.order.deleteMany();
   await prisma.product.deleteMany();
+  await prisma.sellerProfile.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.platform.deleteMany();
+  await prisma.genre.deleteMany();
 
   const saltRounds = 10;
 
-  // 2. Creación de Usuarios (Ajustado a minúsculas y campos existentes)
+  console.log('👤 Creando usuarios (Admin y Buyer)...');
   const hashedAdminPassword = await bcrypt.hash('admin123', saltRounds);
   const admin = await prisma.user.create({
     data: {
       email: 'admin@4fun.com',
       password: hashedAdminPassword,
       name: 'Admin Principal',
-      role: 'ADMIN', 
+      role: Role.ADMIN,
+      sellerProfile: {
+        create: {
+          storeName: 'Tienda Oficial 4Fun',
+          isApproved: true,
+        }
+      }
     },
   });
 
-  const hashedBuyerPassword = await bcrypt.hash('user123', saltRounds);
-  await prisma.user.create({
+  const hashedBuyerPassword = await bcrypt.hash('buyer123', saltRounds);
+  const buyer = await prisma.user.create({
     data: {
-      email: 'comprador@gmail.com',
+      email: 'buyer@4fun.com',
       password: hashedBuyerPassword,
-      name: 'Juan Pérez',
-      role: 'BUYER', 
+      name: 'Juan Pérez (Comprador)',
+      role: Role.BUYER,
     },
   });
 
-  // 3. Creación de Productos (Ajustado a campos reales)
-  // El error indica que 'name' no existe en Product. Verifica si es 'nombre' o 'title'.
-  // Si tu esquema está en español por la normalización, usa 'nombre'.
+  console.log('🎮 Creando referencias (Platform y Genre)...');
+  const platform = await prisma.platform.create({ data: { name: 'PC', slug: 'pc' } });
+  const genre = await prisma.genre.create({ data: { name: 'RPG', slug: 'rpg' } });
+
+  console.log('📦 Creando Productos y Bundles (Patrón Composite)...');
   const gameA = await prisma.product.create({
     data: {
-      name: 'Elden Ring', 
+      name: 'Elden Ring',
       description: 'Acción y RPG en mundo abierto',
       price: 60000,
       sellerId: admin.id,
       isBundle: false,
-      type: 'DIGITAL',
-      releaseDate: new Date(),
-      platformId: (await prisma.platform.create({ data: { name: 'PC', slug: 'pc' } })).id,
-      genreId: (await prisma.genre.create({ data: { name: 'RPG', slug: 'rpg' } })).id
+      type: ProductType.DIGITAL,
+      releaseDate: new Date('2022-02-25'),
+      platformId: platform.id,
+      genreId: genre.id,
+      developer: 'FromSoftware',
+      stock: 100,
     },
   });
 
-  console.log('✅ Base de datos poblada con éxito.');
+  const gameB = await prisma.product.create({
+    data: {
+      name: 'The Witcher 3',
+      description: 'RPG clásico',
+      price: 30000,
+      sellerId: admin.id,
+      isBundle: false,
+      type: ProductType.DIGITAL,
+      releaseDate: new Date('2015-05-19'),
+      platformId: platform.id,
+      genreId: genre.id,
+      developer: 'CD Projekt Red',
+      stock: 50,
+    },
+  });
+
+  const bundle = await prisma.product.create({
+    data: {
+      name: 'RPG Ultimate Bundle',
+      description: 'Los mejores RPG en un solo paquete',
+      price: 80000, // Strategy: Precio con descuento respecto a la suma
+      sellerId: admin.id,
+      isBundle: true,
+      type: ProductType.DIGITAL,
+      releaseDate: new Date(),
+      platformId: platform.id,
+      genreId: genre.id,
+      developer: 'Múltiples',
+      bundleChildren: {
+        create: [
+          { productId: gameA.id },
+          { productId: gameB.id }
+        ]
+      }
+    },
+  });
+
+  console.log('🛒 Creando Órdenes (Patrón Strategy)...');
+  const order = await prisma.order.create({
+    data: {
+      userId: buyer.id,
+      totalPrice: gameA.price,
+      shippingPrice: 0,
+      status: OrderStatus.PROCESSING,
+      isPaid: true,
+      paymentMethod: PaymentMethod.MERCADOPAGO,
+      orderItems: {
+        create: [
+          {
+            productId: gameA.id,
+            quantity: 1,
+            unitPriceAtPurchase: gameA.price, // Strategy: Snapshot Inmutable
+          }
+        ]
+      }
+    }
+  });
+
+  console.log('✅ Base de datos poblada con éxito. (3NF, Composite y Strategy validados).');
 }
 
 main()
   .catch((e) => {
     console.error(e);
-    // @ts-ignore - Evita el error de process si aún no instalaste @types/node
-    if (typeof process !== 'undefined') process.exit(1);
+    process.exit(1);
   })
   .finally(async () => {
     await prisma.$disconnect();
