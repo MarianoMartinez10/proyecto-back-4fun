@@ -144,7 +144,7 @@ class ProductService extends BaseService {
         return {
             data: [
                 {
-                    id: "mock-1", _id: "mock-1",
+                    id: "mock-product-1", _id: "mock-product-1",
                     name: "Cyberpunk Mock", description: "Juego de prueba hardcodeado",
                     price: 29.99, finalPrice: 14.99, discountPercentage: 50,
                     platform: { id: "p1", name: "PC", slug: "pc", active: true },
@@ -154,7 +154,7 @@ class ProductService extends BaseService {
                     rating: 4.5, stock: 100, active: true, order: 1, offers: []
                 },
                 {
-                    id: "mock-2", _id: "mock-2",
+                    id: "mock-product-2", _id: "mock-product-2",
                     name: "Fifa Mock", description: "Juego de prueba hardcodeado 2",
                     price: 59.99, finalPrice: 59.99, discountPercentage: 0,
                     platform: { id: "p2", name: "PS5", slug: "ps5", active: true },
