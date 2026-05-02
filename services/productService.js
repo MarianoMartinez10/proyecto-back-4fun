@@ -268,15 +268,57 @@ class ProductService extends BaseService {
      * @param {boolean} context.includeInactive - Incluye inactivos cuando el rol lo permite.
      */
     async getProductById(id, context = {}) {
-        const { includeInactive = false } = context;
-        const product = await this.getById(id, { includeInactive });
-
-        // Si la taxonomia relacionada fue dada de baja, el producto no debe exponerse en tienda publica.
-        if (!includeInactive && (product.platform?.active === false || product.genre?.active === false)) {
-            throw new ErrorResponse('Producto no disponible', 404);
-        }
-
-        return product;
+        return {
+            id: id, _id: id,
+            name: "Cyberpunk Mock (G2A Style)",
+            description: "Juego de prueba hardcodeado para ver el diseño de ofertas tipo G2A.",
+            price: 59.99,
+            finalPrice: 29.99,
+            discountPercentage: 50,
+            platform: { id: "p1", name: "PC", slug: "pc", active: true },
+            genre: { id: "g1", name: "RPG", slug: "rpg", active: true },
+            type: "Digital",
+            releaseDate: new Date(),
+            developer: "Mock Studio",
+            imageId: "https://placehold.co/600x400?text=Cyberpunk+G2A",
+            rating: 4.8,
+            stock: 100,
+            active: true,
+            order: 1,
+            requirements: {
+                minimum: { os: "Windows 10", processor: "Intel Core i5", memory: "8 GB RAM" },
+                recommended: { os: "Windows 11", processor: "Intel Core i7", memory: "16 GB RAM" }
+            },
+            offers: [
+                {
+                    id: "offer-1",
+                    sellerId: "seller-1",
+                    sellerName: "NanoMartinez",
+                    storeName: "Nano Games",
+                    price: 29.99,
+                    stock: 50,
+                    active: true
+                },
+                {
+                    id: "offer-2",
+                    sellerId: "seller-2",
+                    sellerName: "KukiStore",
+                    storeName: "Kuki Keys",
+                    price: 32.50,
+                    stock: 10,
+                    active: true
+                },
+                {
+                    id: "offer-3",
+                    sellerId: "seller-3",
+                    sellerName: "CheapGamer",
+                    storeName: "CheapGamer",
+                    price: 35.00,
+                    stock: 5,
+                    active: true
+                }
+            ]
+        };
     }
 
     /**
