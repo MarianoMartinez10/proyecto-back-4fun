@@ -33,9 +33,9 @@ model Genre {
 // ── Usuario ───────────────────────────────────────────────────────────────────
 
 enum Role {
-  buyer
-  seller
-  admin
+  BUYER
+  SELLER
+  ADMIN
 }
 
 model User {
@@ -46,7 +46,7 @@ model User {
   avatar               String?
   phone                String?
   address              String?
-  role                 Role      @default(buyer)
+  role                 Role      @default(BUYER)
   isVerified           Boolean   @default(false)
   verificationToken    String?
   verificationTokenExp DateTime?
