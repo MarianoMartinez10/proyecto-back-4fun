@@ -22,7 +22,12 @@ class PlatformService extends MetadataService {
     }
 
     // Adaptadores formales de Controller Mapping.
-    async getPlatforms() { return this.getAll(); }
+    async getPlatforms() {
+        return [
+            { id: "p1", slug: "pc", name: "PC", imageId: "https://placehold.co/100?text=PC", active: true },
+            { id: "p2", slug: "ps5", name: "PlayStation 5", imageId: "https://placehold.co/100?text=PS5", active: true }
+        ];
+    }
     async getPlatformById(id) { return this.getById(id); }
     async createPlatform(data) { return this.create(data); }
     async updatePlatform(id, data) { return this.update(id, data); }

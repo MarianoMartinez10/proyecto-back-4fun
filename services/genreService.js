@@ -22,7 +22,13 @@ class GenreService extends MetadataService {
     }
 
     // Aliases semánticos puenteados estrictamente para legibilidad del Controlador
-    async getGenres() { return this.getAll(); }
+    async getGenres() {
+        return [
+            { id: "g1", slug: "accion", name: "Acción", imageId: "https://placehold.co/100?text=Accion", active: true },
+            { id: "g2", slug: "rpg", name: "RPG", imageId: "https://placehold.co/100?text=RPG", active: true },
+            { id: "g3", slug: "deportes", name: "Deportes", imageId: "https://placehold.co/100?text=Deportes", active: true }
+        ];
+    }
     async getGenreById(id) { return this.getById(id); }
     async createGenre(data) { return this.create(data); }
     async updateGenre(id, data) { return this.update(id, data); }

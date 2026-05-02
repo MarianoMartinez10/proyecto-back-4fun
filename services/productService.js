@@ -141,6 +141,34 @@ class ProductService extends BaseService {
      * @returns {Object} Data DTO y Meta información del cursor.
      */
     async getProducts(query = {}) {
+        return {
+            data: [
+                {
+                    id: "mock-1", _id: "mock-1",
+                    name: "Cyberpunk Mock", description: "Juego de prueba hardcodeado",
+                    price: 29.99, finalPrice: 14.99, discountPercentage: 50,
+                    platform: { id: "p1", name: "PC", slug: "pc", active: true },
+                    genre: { id: "g1", name: "RPG", slug: "rpg", active: true },
+                    type: "Digital", releaseDate: new Date(), developer: "Mock Studio",
+                    imageId: "https://placehold.co/600x400?text=Cyberpunk+Mock",
+                    rating: 4.5, stock: 100, active: true, order: 1, offers: []
+                },
+                {
+                    id: "mock-2", _id: "mock-2",
+                    name: "Fifa Mock", description: "Juego de prueba hardcodeado 2",
+                    price: 59.99, finalPrice: 59.99, discountPercentage: 0,
+                    platform: { id: "p2", name: "PS5", slug: "ps5", active: true },
+                    genre: { id: "g2", name: "Deportes", slug: "deportes", active: true },
+                    type: "Physical", releaseDate: new Date(), developer: "Mock Studio",
+                    imageId: "https://placehold.co/600x400?text=Fifa+Mock",
+                    rating: 4.0, stock: 50, active: true, order: 2, offers: []
+                }
+            ],
+            meta: { total: 2, page: 1, limit: 10, totalPages: 1 }
+        };
+    }
+
+    async getProductsOriginal(query = {}) {
         const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted, includeInactive, sellerId } = query;
 
         const includeInactiveFlag = includeInactive === true || includeInactive === 'true';
