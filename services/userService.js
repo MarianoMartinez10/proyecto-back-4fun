@@ -17,7 +17,7 @@ class UserService extends BaseService {
      * Inyecta la configuración de persistencia para la tabla 'user'.
      */
     constructor() {
-        super('user', { entityLabel: 'Usuario' });
+        super('user', { entityLabel: 'Usuario', hasActiveField: false });
     }
 
     /**
@@ -120,8 +120,6 @@ class UserService extends BaseService {
                 ...(address !== undefined && { address }),
                 ...(role !== undefined && { role }),
                 ...(isVerified !== undefined && { isVerified }),
-                ...(isVerified === false && { isActive: false }), // RN: Desverificar cuenta puede suspenderla
-                ...(data.isActive !== undefined && { isActive: data.isActive }),
                 // RN - Modelo Simplificado (Mercado Libre): El rol 'seller' implica aprobación.
                 // Si se activa el rol SELLER o isApproved es true, aseguramos que exista el perfil.
                 ...((role === 'SELLER' || isApproved === true) ? {
@@ -164,7 +162,8 @@ class UserService extends BaseService {
      * @param {string} reason - Motivo para auditoría.
      */
     async suspendUser(id, reason = 'No especificada') {
-        return this.updateUser(id, { isActive: false });
+        logger.warn(`Suspensión solicitada para ${id}, pero el modelo User no tiene campo isActive.`);
+        return this.updateUser(id, {});
     }
 
     /**
