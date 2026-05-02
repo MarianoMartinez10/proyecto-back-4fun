@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "test": "jest",
     "tunnel": "ngrok http --domain=unsubducted-subuncinate-brittni.ngrok-free.dev 9003",
-    "postinstall": "prisma generate && prisma db push --accept-data-loss"
+    "postinstall": "prisma generate"
   },
   "keywords": [
     "ecommerce",
