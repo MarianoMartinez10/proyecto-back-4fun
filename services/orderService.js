@@ -257,9 +257,7 @@ class OrderService {
                     where: {
                         offerId: item.offerId,
                         estado: 'DISPONIBLE',
-                        orderId: null,
-                        activo: true,
-                    },
+                        orderId: null},
                     orderBy: { createdAt: 'asc' },
                     take: missingKeys,
                     select: { id: true }
@@ -274,8 +272,7 @@ class OrderService {
                     where: {
                         id: { in: keyIds },
                         estado: 'DISPONIBLE',
-                        orderId: null,
-                    },
+                        orderId: null},
                     data: {
                         estado: 'VENDIDA',
                         orderId,

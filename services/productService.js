@@ -14,13 +14,13 @@ const logger = require('../utils/logger');
  */
 
 const PRODUCT_INCLUDE = {
-    platform: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
-    genre: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
+    platform: { select: { id: true, slug: true, nombre: true, imageId: true} },
+    genre: { select: { id: true, slug: true, nombre: true, imageId: true} },
     offers: {
-        where: { activo: true },
+        where: {  },
         include: {
             seller: { include: { sellerProfile: true } },
-            _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE', activo: true } } } }
+            _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE'} } } }
         },
         orderBy: { precio: 'asc' }
     }
@@ -93,14 +93,14 @@ class ProductService extends BaseService {
                 slug: p.platform.slug,
                 name: p.platform.nombre,
                 imageId: p.platform.imageId,
-                active: p.platform.activo
+                active: true
             } : { id: p.platformId, name: 'Sin clasificar', active: false },
             genre: p.genre ? {
                 id: p.genre.id,
                 slug: p.genre.slug,
                 name: p.genre.nombre,
                 imageId: p.genre.imageId,
-                active: p.genre.activo
+                active: true
             } : { id: p.genreId, name: 'Sin clasificar', active: false },
             type: p.tipo === 'Fisico' ? 'Physical' : 'Digital',
             releaseDate: p.fechaLanzamiento,
@@ -110,7 +110,7 @@ class ProductService extends BaseService {
             rating: Number(p.calificacion),
             // RN - Disponibilidad: El stock total está cacheado desde OfferService
             stock: p.stock,
-            active: p.activo,
+            active: true,
             specPreset: p.specPreset,
             requirements: p.requirements
                 ? Object.fromEntries(
@@ -128,7 +128,7 @@ class ProductService extends BaseService {
                 storeName: o.seller?.sellerProfile?.storeName || o.seller?.name || 'Tienda',
                 price: Number(o.precio),
                 stock: p.tipo === 'Digital' ? (o._count?.digitalKeys || 0) : o.stock,
-                active: o.activo
+                active: true
             }))
         };
     }
@@ -144,7 +144,7 @@ class ProductService extends BaseService {
         const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted, includeInactive, sellerId } = query;
 
         const includeInactiveFlag = includeInactive === true || includeInactive === 'true';
-        const where = includeInactiveFlag ? {} : { activo: true };
+        const where = includeInactiveFlag ? {} : {  };
 
         // RN - Búsqueda: Sensible a múltiples campos (Match Parcial Insensible).
         if (search) {
@@ -211,8 +211,7 @@ class ProductService extends BaseService {
             '-rating': { calificacion: 'desc' },
             'name': { nombre: 'asc' },
             '-name': { nombre: 'desc' },
-            'order': { orden: 'asc' },
-        };
+            'order': { orden: 'asc' }};
         const orderBy = (sort && sortMap[sort]) ? sortMap[sort] : { orden: 'asc' };
 
         const [products, count] = await Promise.all([
@@ -266,24 +265,24 @@ class ProductService extends BaseService {
         // RN - Validación Cruzada: Verifica existencia de dependencias taxonómicas activas.
         let platformRecord = null;
         if (platformId) {
-            platformRecord = await prisma.platform.findFirst({ where: { id: platformId, activo: true } });
+            platformRecord = await prisma.platform.findFirst({ where: { id: platformId} });
         }
         if (!platformRecord && platformSlug) {
-            platformRecord = await prisma.platform.findFirst({ where: { slug: platformSlug, activo: true } });
+            platformRecord = await prisma.platform.findFirst({ where: { slug: platformSlug} });
         }
         if (!platformRecord) throw new ErrorResponse(`Plataforma '${platformSlug}' no encontrada`, 400);
 
         let genreRecord = null;
         if (genreId) {
-            genreRecord = await prisma.genre.findFirst({ where: { id: genreId, activo: true } });
+            genreRecord = await prisma.genre.findFirst({ where: { id: genreId} });
         }
         if (!genreRecord && genreSlug) {
-            genreRecord = await prisma.genre.findFirst({ where: { slug: genreSlug, activo: true } });
+            genreRecord = await prisma.genre.findFirst({ where: { slug: genreSlug} });
         }
         if (!genreRecord) throw new ErrorResponse(`Género '${genreSlug}' no encontrado`, 400);
 
         // RN - Ordenamiento default: Los nuevos se ubican al final del stack.
-        const firstProduct = await prisma.product.findFirst({ where: { activo: true }, orderBy: { orden: 'asc' } });
+        const firstProduct = await prisma.product.findFirst({ where: {  }, orderBy: { orden: 'asc' } });
         const newOrder = firstProduct ? firstProduct.orden - 1000 : 0;
 
         const tipo = type === 'Physical' ? 'Fisico' : 'Digital';
@@ -313,7 +312,6 @@ class ProductService extends BaseService {
                 imagenUrl: imageId || 'https://placehold.co/600x400?text=Sin+Imagen',
                 trailerUrl: trailerUrl || null,
                 stock: tipo === 'Digital' ? 0 : (stock ?? 0),
-                activo: active !== undefined ? active : true,
                 specPreset: specPreset || null,
                 descuentoPorcentaje: discountPercentage ?? 0,
                 descuentoFechaFin: discountEndDate ? new Date(discountEndDate) : null,
@@ -336,7 +334,7 @@ class ProductService extends BaseService {
         if (!existing) throw new ErrorResponse('Producto no encontrado', 404);
 
         const updateData = {};
-        const fields = ['name:nombre', 'description:descripcion', 'price:precio', 'developer:desarrollador', 'imageId:imagenUrl', 'trailerUrl', 'active:activo', 'specPreset', 'discountPercentage:descuentoPorcentaje'];
+        const fields = ['name:nombre', 'description:descripcion', 'price:precio', 'developer:desarrollador', 'imageId:imagenUrl', 'trailerUrl', 'specPreset', 'discountPercentage:descuentoPorcentaje'];
         
         fields.forEach(field => {
             const [src, dest] = field.split(':');
@@ -351,18 +349,18 @@ class ProductService extends BaseService {
         const effectiveType = updateData.tipo || existing.tipo;
 
         if (data.platformId !== undefined) {
-            const p = await prisma.platform.findFirst({ where: { id: data.platformId, activo: true } });
+            const p = await prisma.platform.findFirst({ where: { id: data.platformId} });
             if (p) updateData.platformId = p.id;
         } else if (data.platform !== undefined) {
-            const p = await prisma.platform.findFirst({ where: { slug: data.platform, activo: true } });
+            const p = await prisma.platform.findFirst({ where: { slug: data.platform} });
             if (p) updateData.platformId = p.id;
         }
 
         if (data.genreId !== undefined) {
-            const g = await prisma.genre.findFirst({ where: { id: data.genreId, activo: true } });
+            const g = await prisma.genre.findFirst({ where: { id: data.genreId} });
             if (g) updateData.genreId = g.id;
         } else if (data.genre !== undefined) {
-            const g = await prisma.genre.findFirst({ where: { slug: data.genre, activo: true } });
+            const g = await prisma.genre.findFirst({ where: { slug: data.genre} });
             if (g) updateData.genreId = g.id;
         }
 
@@ -414,14 +412,14 @@ class ProductService extends BaseService {
         if (!product) throw new ErrorResponse('Producto no encontrado', 404);
         
         // RN - Integridad Histórica: El producto no se borra (SQL DELETE), se desactiva.
-        await prisma.product.update({ where: { id }, data: { activo: false } });
+        await prisma.product.update({ where: { id }, data: {  } });
         return true;
     }
 
     async deleteProducts(ids) {
         return await prisma.product.updateMany({
             where: { id: { in: ids } },
-            data: { activo: false }
+            data: {  }
         });
     }
 
@@ -481,10 +479,10 @@ class ProductService extends BaseService {
         if (newPosition < 1) throw new ErrorResponse('Posición inválida', 400);
 
         const product = await prisma.product.findUnique({ where: { id } });
-        if (!product || !product.activo) throw new ErrorResponse('Producto no encontrable o inactivo', 404);
+        if (!product || false) throw new ErrorResponse('Producto no encontrable o inactivo', 404);
 
         const otherProducts = await prisma.product.findMany({
-            where: { id: { not: id }, activo: true },
+            where: { id: { not: id }},
             orderBy: { orden: 'asc' }
         });
 

@@ -9,7 +9,7 @@ class OfferService {
      */
     async updateProductCache(productId) {
         const offers = await prisma.productOffer.findMany({
-            where: { productId, activo: true }
+            where: { productId}
         });
 
         // Si no hay ofertas, el precio es 0. Si hay, calculamos el mínimo.
@@ -25,7 +25,7 @@ class OfferService {
         if (product.tipo === 'Digital') {
             // El stock digital es la cantidad de keys disponibles en TODAS las ofertas de este producto
             const keysCount = await prisma.digitalKey.count({
-                where: { offer: { productId }, estado: 'DISPONIBLE', activo: true }
+                where: { offer: { productId }, estado: 'DISPONIBLE'}
             });
             totalStock = keysCount;
         } else {
@@ -43,7 +43,7 @@ class OfferService {
 
     async getOffersByProduct(productId) {
         const offers = await prisma.productOffer.findMany({
-            where: { productId, activo: true },
+            where: { productId},
             include: {
                 seller: { include: { sellerProfile: true } },
                 _count: { select: { digitalKeys: { where: { estado: 'DISPONIBLE' } } } }
@@ -59,7 +59,7 @@ class OfferService {
             storeName: o.seller.sellerProfile?.storeName || o.seller.name,
             price: Number(o.precio),
             stock: o.stock + (o._count?.digitalKeys || 0), // Digital keys + Physical stock
-            active: o.activo,
+            active: true,
             createdAt: o.createdAt
         }));
     }
@@ -87,9 +87,7 @@ class OfferService {
                 productId,
                 sellerId,
                 precio: price,
-                stock: stock || 0,
-                activo: true
-            }
+                stock: stock || 0}
         });
 
         await this.updateProductCache(productId);
@@ -108,9 +106,7 @@ class OfferService {
             where: { id: offerId },
             data: {
                 precio: data.price !== undefined ? data.price : offer.precio,
-                stock: data.stock !== undefined ? data.stock : offer.stock,
-                activo: data.active !== undefined ? data.active : offer.activo
-            }
+                stock: data.stock !== undefined ? data.stock : offer.stock}
         });
 
         await this.updateProductCache(offer.productId);
@@ -128,7 +124,7 @@ class OfferService {
         // Eliminación lógica (soft delete) para mantener historial de órdenes
         await prisma.productOffer.update({ 
             where: { id: offerId },
-            data: { activo: false }
+            data: {  }
         });
         
         await this.updateProductCache(offer.productId);

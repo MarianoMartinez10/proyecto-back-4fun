@@ -12,7 +12,7 @@ model Platform {
   id        String    @id @default(uuid())
   slug      String    @unique
   nombre    String
-  activo    Boolean   @default(true)
+
   imageId   String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -23,7 +23,7 @@ model Genre {
   id        String    @id @default(uuid())
   slug      String    @unique
   nombre    String
-  activo    Boolean   @default(true)
+
   imageId   String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -112,7 +112,7 @@ model Product {
   calificacion        Decimal     @default(0) @db.Decimal(3, 2)
   stock               Int         @default(0)
   cantidadVendida     Int         @default(0)
-  activo              Boolean     @default(true)
+
   specPreset          SpecPreset?
   descuentoPorcentaje Int         @default(0)
   descuentoFechaFin   DateTime?
@@ -152,7 +152,7 @@ model ProductOffer {
   sellerId  String
   precio    Decimal  @db.Decimal(10, 2)
   stock     Int      @default(0)
-  activo    Boolean  @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -288,7 +288,7 @@ model Review {
   title             String?
   text              String
   verified          Boolean    @default(false)
-  activo            Boolean    @default(true)
+
   helpfulCount      Int        @default(0)
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
@@ -324,7 +324,7 @@ model DigitalKey {
   offerId    String
   clave      String    @unique
   estado     KeyStatus @default(DISPONIBLE)
-  activo     Boolean   @default(true)
+
   orderId    String?
   fechaVenta DateTime?
   createdAt  DateTime  @default(now())

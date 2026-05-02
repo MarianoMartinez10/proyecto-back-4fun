@@ -20,7 +20,7 @@ class BaseService {
      * @param {string} options.entityLabel - Nombre semántico para registro en Logs de Error.
      */
     constructor(modelName, options = {}) {
-        const { entityLabel, hasActiveField = true } = options;
+        const { entityLabel, hasActiveField = false } = options;
         
         // Manejo de Excepciones: Bloquea intentos de usar BaseService globalmente en vez de heredar.
         if (new.target === BaseService) {

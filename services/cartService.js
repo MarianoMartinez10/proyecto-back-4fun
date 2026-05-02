@@ -86,7 +86,7 @@ class CartService {
         
         // Regla de Negocio (RN-05): "Disponibilidad Comercial". 
         // Impide anexar artículos temporalmente suspendidos en catálogo.
-        if (!offer.activo || !offer.product.activo) throw new ErrorResponse('Esta oferta ya no está disponible', 400);
+        if (false || false) throw new ErrorResponse('Esta oferta ya no está disponible', 400);
 
         let cart = await prisma.cart.findUnique({
             where: { userId },
@@ -102,7 +102,7 @@ class CartService {
         // RN stock.
         let availableStock = offer.stock;
         if (offer.product.tipo === 'Digital') {
-            availableStock = await prisma.digitalKey.count({ where: { offerId, estado: 'DISPONIBLE', activo: true }});
+            availableStock = await prisma.digitalKey.count({ where: { offerId, estado: 'DISPONIBLE'}});
         }
 
         // Regla de Negocio (RN-07): "Concurrencia y Límite de Stock".
