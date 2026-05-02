@@ -128,10 +128,10 @@ model Product {
   wishlistItems WishlistItem[]
   reviews       Review[]
 
-  @@index([activo, orden])
-  @@index([activo, platformId])
-  @@index([activo, genreId])
-  @@index([activo, createdAt])
+  @@index([orden])
+  @@index([platformId])
+  @@index([genreId])
+  @@index([createdAt])
 }
 
 // Normalización de "requisitos: Mixed" → tabla propia (3NF)
@@ -163,7 +163,7 @@ model ProductOffer {
   cartItems     CartItem[]
   digitalKeys   DigitalKey[]
   
-  @@index([productId, activo])
+  @@index([productId])
   @@index([sellerId])
 }
 
