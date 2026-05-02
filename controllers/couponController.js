@@ -24,7 +24,7 @@ exports.createCoupon = async (req, res, next) => {
         const coupon = await prisma.coupon.create({
             data: {
                 code: code?.toUpperCase(), // RN Normalización: Todos los códigos habitan en Mayúsculas.
-                discountType: discountType || 'percentage',
+                discountType: discountType || 'PERCENTAGE',
                 value: value !== undefined ? value : 0,
                 minPurchase: minPurchase !== undefined ? minPurchase : 0,
                 usageLimit: usageLimit || null,

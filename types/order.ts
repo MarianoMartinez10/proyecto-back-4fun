@@ -4,11 +4,11 @@
  */
 
 export enum OrderStatus {
-  pending = 'pending',
-  processing = 'processing',
-  shipped = 'shipped',
-  delivered = 'delivered',
-  cancelled = 'cancelled'
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  SHIPPED = 'SHIPPED',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED'
 }
 
 export interface Order {
@@ -16,10 +16,9 @@ export interface Order {
   userId: string;
   paymentMethod: string;
   externalId?: string;
-  itemsPrice: number;
   shippingPrice: number;
   totalPrice: number;
-  orderStatus: OrderStatus;
+  status: OrderStatus;
   isPaid: boolean;
   paidAt?: Date;
   isDelivered: boolean;

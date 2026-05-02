@@ -19,7 +19,9 @@ class BaseService {
      * @param {object} options - Opciones adicionales.
      * @param {string} options.entityLabel - Nombre semántico para registro en Logs de Error.
      */
-    constructor(modelName, { entityLabel, hasActiveField = true } = {}) {
+    constructor(modelName, options = {}) {
+        const { entityLabel, hasActiveField = true } = options;
+        
         // Manejo de Excepciones: Bloquea intentos de usar BaseService globalmente en vez de heredar.
         if (new.target === BaseService) {
             throw new Error('BaseService es una clase abstracta y no puede instanciarse directamente.');
@@ -28,6 +30,9 @@ class BaseService {
         this.model = prisma[modelName];
         this.entityLabel = entityLabel || modelName;
         this.hasActiveField = hasActiveField;
+        this.activeFieldName = options.activeFieldName || 'isActive';
+        this.activeValue = options.activeValue !== undefined ? options.activeValue : true;
+        this.inactiveValue = options.inactiveValue !== undefined ? options.inactiveValue : false;
 
         if (!this.model) {
             throw new Error(`Modelo Prisma "${modelName}" no encontrado. Verificá el schema.`);
@@ -80,7 +85,7 @@ class BaseService {
 
     /**
     * Devuelve colección de registros transformados a DTO.
-    * RN (Filtro): Solo retorna registros con estado 'activo: true' para limpieza de datos.
+    * RN (Filtro): Solo retorna registros con estado 'isActive: true' para limpieza de datos.
     * RN (Contexto de Rol): El controlador puede habilitar includeInactive=true
     * para rutas administrativas protegidas por RBAC.
     * @param {object} context - Contexto de consulta.
@@ -92,7 +97,7 @@ class BaseService {
 
         // Estructura de consulta con filtro de vitalidad por defecto.
         const queryOptions = {
-            where: (this.hasActiveField && !includeInactive) ? { activo: { not: false } } : {}
+            where: (this.hasActiveField && !includeInactive) ? { [this.activeFieldName]: this.activeValue } : {}
         };
         
         const select = this.getSelectFields();
@@ -122,7 +127,7 @@ class BaseService {
 
         const queryOptions = {
             where: (this.hasActiveField && !includeInactive)
-                ? { id, activo: { not: false } }
+                ? { id, [this.activeFieldName]: this.activeValue }
                 : { id }
         };
         const select = this.getSelectFields();
@@ -144,7 +149,7 @@ class BaseService {
     /**
      * Purga lógicamente un registro por su ID (Regla 2 TFI).
      * -------------------------------------------------------------------------
-     * En lugar de borrar físicamente (DELETE), muta el estado a 'activo: false'.
+     * En lugar de borrar físicamente (DELETE), muta el estado a 'isActive: false'.
      * Esto garantiza la trazabilidad histórica y consistencia referencial.
      * 
      * @param {string} id - UUID del ítem.
@@ -161,7 +166,7 @@ class BaseService {
             // Operación de Mutación (Logical Delete)
             await this.model.update({
                 where: { id },
-                data: { activo: false }
+                data: { [this.activeFieldName]: this.inactiveValue }
             });
         } else {
             await this.model.delete({ where: { id } });

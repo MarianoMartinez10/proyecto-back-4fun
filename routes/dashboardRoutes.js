@@ -14,7 +14,7 @@ const { protect, authorize } = require('../middlewares/auth');
  */
 
 router.use(protect);
-router.use(authorize('admin', 'seller'));
+router.use(authorize('ADMIN', 'SELLER'));
 
 /** @route GET /api/dashboard/stats - Indicadores macro de rendimiento (Revenue). */
 router.get('/stats', getStats);

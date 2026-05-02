@@ -23,15 +23,15 @@ router.get('/:id', getGenre);
 // ─── GESTIÓN ADMINISTRATIVA (RESTRICTED) ───
 
 /** @route POST /api/genres - Alta de nueva rama taxonómica. */
-router.post('/', protect, authorize('admin'), createGenre);
+router.post('/', protect, authorize('ADMIN'), createGenre);
 
 /** @route PUT /api/genres/:id - Modificación de metadatos o Slugs. */
-router.put('/:id', protect, authorize('admin'), updateGenre);
+router.put('/:id', protect, authorize('ADMIN'), updateGenre);
 
 /** @route DELETE /api/genres/multi - Expurgación por lotes (Batch Delete). */
-router.delete('/multi', protect, authorize('admin'), deleteGenres);
+router.delete('/multi', protect, authorize('ADMIN'), deleteGenres);
 
 /** @route DELETE /api/genres/:id - Baja lógica de una entrada individual. */
-router.delete('/:id', protect, authorize('admin'), deleteGenre);
+router.delete('/:id', protect, authorize('ADMIN'), deleteGenre);
 
 module.exports = router;

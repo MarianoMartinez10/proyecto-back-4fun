@@ -10,6 +10,30 @@ const errorHandler = require('./middlewares/errorHandler');
 const validateEnv = require('./middlewares/validateEnv');
 const logger = require('./utils/logger'); // Importar Winston
 
+/**
+ * Patrón GoF: Observer — Registro Dinámico de Observers al Arranque
+ * --------------------------------------------------------------------------
+ * Este bloque es el único punto en toda la aplicación donde se declara
+ * QUIÉN está suscrito al bus de eventos de órdenes. Cualquier futuro canal
+ * de notificación (SMS, Push, Webhook) se añade aquí con una sola línea.
+ *
+ * GoF §Observer — "Support for broadcast communication: Adding new observers
+ * requires only registering them. The Subject remains unchanged."
+ * (Design Patterns, GoF §5 — Observer: Consequences)
+ *
+ * Para deshabilitar un canal: comentar la línea `.subscribe(...)` correspondiente.
+ * Para añadir SMS mañana: `.subscribe(require('./services/observers/SmsObserver'))`.
+ */
+const orderEventBus              = require('./services/observers/OrderEventBus');
+const EmailNotificationObserver  = require('./services/observers/EmailNotificationObserver');
+const AuditLogObserver           = require('./services/observers/AuditLogObserver');
+
+// Registro de observers: cada .subscribe() retorna el bus (fluent API).
+orderEventBus
+    .subscribe(AuditLogObserver)           // Auditoría: siempre activa
+    .subscribe(EmailNotificationObserver); // Email: entrega de keys digitales
+// .subscribe(require('./services/observers/SmsObserver')); // ← SMS: descomentar cuando esté listo
+
 dotenv.config();
 validateEnv();
 

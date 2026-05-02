@@ -32,8 +32,11 @@ exports.getUsers = async (req, res, next) => {
       ];
     }
 
-    if (role && ['buyer', 'seller', 'admin'].includes(role)) {
-      where.role = role;
+    if (role) {
+      const normalizedRole = role.toUpperCase();
+      if (['BUYER', 'SELLER', 'ADMIN'].includes(normalizedRole)) {
+        where.role = normalizedRole;
+      }
     }
 
     const skip = (page - 1) * limit;
@@ -85,7 +88,7 @@ exports.getUserById = async (req, res, next) => {
     const orders = await prisma.order.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
-      include: { orderItems: true, shippingAddress: true }
+      include: { orderItems: { include: { product: true } }, shippingAddress: true }
     });
 
     const paidOrders = orders.filter(o => o.isPaid);
@@ -101,10 +104,14 @@ exports.getUserById = async (req, res, next) => {
           id: o.id,
           createdAt: o.createdAt,
           totalPrice: Number(o.totalPrice),
-          orderStatus: o.orderStatus,
+          status: o.status,
           isPaid: o.isPaid,
           itemCount: o.orderItems.length,
-          items: o.orderItems.map(i => ({ name: i.name, quantity: i.quantity, price: Number(i.price) }))
+          items: o.orderItems.map(i => ({ 
+            name: i.product?.name || 'Producto Desconocido', 
+            quantity: i.quantity, 
+            price: Number(i.unitPriceAtPurchase) 
+          }))
         }))
       }
     });
@@ -121,7 +128,7 @@ exports.updateUser = async (req, res, next) => {
     const { role, isVerified, name, email, isApproved } = req.body;
 
     // RN (Regla de Seguridad Base): Un jerarca no puede degradarse a sí mismo (Lockout prevention).
-    if (req.user.id === req.params.id && role && role !== 'admin') {
+    if (req.user.id === req.params.id && role && role !== 'ADMIN') {
       throw new ErrorResponse('No puedes cambiar tu propio rol de administrador.', 400);
     }
 

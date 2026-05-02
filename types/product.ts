@@ -4,36 +4,34 @@
  */
 
 export enum ProductType {
-  Digital = 'Digital',
-  Fisico = 'Fisico'
+  DIGITAL = 'DIGITAL',
+  PHYSICAL = 'PHYSICAL'
 }
 
 export enum SpecPreset {
-  Low = 'Low',
-  Mid = 'Mid',
-  High = 'High'
+  LOW = 'LOW',
+  MID = 'MID',
+  HIGH = 'HIGH'
 }
 
 export interface Product {
   id: string;
-  nombre: string;
-  descripcion: string;
-  precio: number;
+  name: string;
+  description: string;
+  price: number;
   platformId: string;
   genreId: string;
-  tipo: ProductType;
-  fechaLanzamiento: Date;
-  desarrollador: string;
-  imagenUrl: string;
+  type: ProductType;
+  releaseDate: Date;
+  developer: string;
+  imageUrl: string;
   trailerUrl?: string;
-  calificacion: number;
   stock: number;
-  cantidadVendida: number;
-  activo: boolean;
+  isActive: boolean;
   specPreset?: SpecPreset;
-  descuentoPorcentaje: number;
-  descuentoFechaFin?: Date;
-  orden: number;
+  discountPercent: number;
+  discountEndDate?: Date;
+  displayOrder: number;
   sellerId?: string;
   createdAt: Date;
   updatedAt: Date;

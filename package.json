@@ -22,6 +22,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^7.6.0",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
@@ -37,10 +38,18 @@
     "pg": "^8.20.0",
     "winston": "^3.18.3"
   },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
+  },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^25.6.0",
     "jest": "^30.2.0",
     "node-mocks-http": "^1.17.2",
     "nodemon": "^3.0.1",
-    "prisma": "^7.6.0"
+    "prisma": "^7.6.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
   }
 }

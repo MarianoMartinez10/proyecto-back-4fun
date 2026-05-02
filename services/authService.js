@@ -262,10 +262,14 @@ class AuthService {
         const storeExists = await prisma.sellerProfile.findUnique({ where: { storeName } });
         if (storeExists && storeExists.userId !== userId) throw new ErrorResponse('El nombre de la tienda ya está en uso', 400);
 
-        // RN: Si el usuario es ADMIN, no debe perder su rango ni requerir aprobación.
+        // RN (Integridad): Solo usuarios con cuenta verificada pueden ascender a Vendedores.
         const currentUser = await prisma.user.findUnique({ where: { id: userId } });
-        const shouldBeApproved = currentUser.role === 'admin';
-        const finalRole = currentUser.role === 'admin' ? 'admin' : 'seller';
+        if (!currentUser.isVerified) {
+            throw new ErrorResponse('Debes verificar tu cuenta de correo electrónico antes de activar el perfil de vendedor.', 403);
+        }
+
+        const shouldBeApproved = currentUser.role === 'ADMIN';
+        const finalRole = currentUser.role === 'ADMIN' ? 'ADMIN' : 'SELLER';
 
         // Operación Atómica (3FN): Actualiza rol y crea/actualiza perfil en una sola transacción.
         const user = await prisma.user.update({

@@ -4,7 +4,7 @@ async function main() {
   console.log("Buscando 'Far Cry 5' para eliminación...");
   
   const product = await prisma.product.findFirst({
-    where: { nombre: { contains: 'Far Cry 5', mode: 'insensitive' } },
+    where: { name: { contains: 'Far Cry 5', mode: 'insensitive' } },
     include: { _count: { select: { orderItems: true } } }
   });
 
@@ -13,14 +13,14 @@ async function main() {
     return;
   }
 
-  console.log(`✅ Encontrado: ${product.nombre} (ID: ${product.id})`);
+  console.log(`✅ Encontrado: ${product.name} (ID: ${product.id})`);
   console.log(`📊 Órdenes asociadas: ${product._count.orderItems}`);
 
   if (product._count.orderItems > 0) {
     console.log("⚠️ El producto tiene órdenes asociadas. Procediendo a DESACTIVAR (Soft Delete) para mantener integridad.");
     await prisma.product.update({
       where: { id: product.id },
-      data: { activo: false }
+      data: { isActive: false }
     });
     console.log("✔️ Producto desactivado correctamente.");
   } else {

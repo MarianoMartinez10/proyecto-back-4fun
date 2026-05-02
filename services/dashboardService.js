@@ -31,8 +31,11 @@ class DashboardService {
             }),
             prisma.user.count(),
             prisma.product.findMany({ 
-                where: sellerId ? { sellerId } : {},
-                select: { activo: true, stock: true } 
+                where: { 
+                    NOT: { status: 'ARCHIVED' },
+                    ...(sellerId && { sellerId }) 
+                },
+                select: { status: true, stock: true } 
             }),
             prisma.orderItem.findMany({
                 where: { 
@@ -53,10 +56,10 @@ class DashboardService {
 
         const totalRevenue = paidOrders.reduce((s, o) => s + (Number(o.unitPriceAtPurchase) * o.quantity), 0);
         const totalOrders = paidOrders.length;
-        const activeProducts = allProducts.filter(p => p.activo).length;
+        const activeProducts = allProducts.filter(p => p.status === 'ACTIVE').length;
         
         // RN Comercial: Advierte umbrales de escasez severa en depósito.
-        const lowStockProducts = allProducts.filter(p => p.activo && p.stock <= 5).length;
+        const lowStockProducts = allProducts.filter(p => p.status === 'ACTIVE' && p.stock <= 5).length;
 
         let currentMonthRev = 0, lastMonthRev = 0;
         for (const o of recentMonthOrders) {
@@ -119,13 +122,13 @@ class DashboardService {
                 order: { isPaid: true },
                 ...(sellerId && { product: { sellerId } })
             },
-            select: { productId: true, quantity: true, unitPriceAtPurchase: true, product: { select: { nombre: true } } }
+            select: { productId: true, quantity: true, unitPriceAtPurchase: true, product: { select: { name: true } } }
         });
 
         const productMap = {};
         for (const i of orderItems) {
             if (!productMap[i.productId]) {
-                productMap[i.productId] = { _id: i.productId, name: i.product?.nombre || 'Desconocido', totalSold: 0, revenueGenerated: 0 };
+                productMap[i.productId] = { _id: i.productId, name: i.product?.name || 'Desconocido', totalSold: 0, revenueGenerated: 0 };
             }
             productMap[i.productId].totalSold += i.quantity;
             productMap[i.productId].revenueGenerated += Number(i.unitPriceAtPurchase) * i.quantity;
@@ -142,7 +145,7 @@ class DashboardService {
     static async getRecentSales(sellerId = null) {
         const orders = await prisma.order.findMany({
             where: sellerId ? { orderItems: { some: { product: { sellerId } } } } : {},
-            select: { id: true, totalPrice: true, orderStatus: true, isPaid: true, createdAt: true, user: { select: { name: true, email: true } } },
+            select: { id: true, totalPrice: true, status: true, isPaid: true, createdAt: true, user: { select: { name: true, email: true } } },
             orderBy: { createdAt: 'desc' },
             take: 5
         });
@@ -151,7 +154,7 @@ class DashboardService {
             id: o.id,
             user: { name: o.user?.name || 'Usuario Eliminado', email: o.user?.email || 'N/A' },
             amount: Number(o.totalPrice),
-            status: o.orderStatus,
+            status: o.status,
             date: o.createdAt
         }));
     }

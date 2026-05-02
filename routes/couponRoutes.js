@@ -14,13 +14,13 @@ const couponController = require('../controllers/couponController');
 // Requieren rol 'admin' para la manipulación del catálogo de vouchers.
 
 /** @route POST /api/coupons - Registro de nueva campaña promocional. */
-router.post('/', protect, authorize('admin'), couponController.createCoupon);
+router.post('/', protect, authorize('ADMIN'), couponController.createCoupon);
 
 /** @route GET /api/coupons - Auditoría completa de cupones emitidos. */
-router.get('/', protect, authorize('admin'), couponController.getCoupons);
+router.get('/', protect, authorize('ADMIN'), couponController.getCoupons);
 
 /** @route DELETE /api/coupons/:id - Revocación física de un código de descuento. */
-router.delete('/:id', protect, authorize('admin'), couponController.deleteCoupon);
+router.delete('/:id', protect, authorize('ADMIN'), couponController.deleteCoupon);
 
 
 // ─── RUTAS PÚBLICAS (CHECKOUT READY) ───
