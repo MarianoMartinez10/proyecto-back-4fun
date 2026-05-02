@@ -48,7 +48,6 @@ model User {
   address              String?
   role                 Role      @default(buyer)
   isVerified           Boolean   @default(false)
-  activo               Boolean   @default(true)
   verificationToken    String?
   verificationTokenExp DateTime?
   resetPasswordToken   String?
